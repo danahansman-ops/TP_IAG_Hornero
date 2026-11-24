@@ -6,20 +6,25 @@ agentes.py: etapa 1, pipeline secuencial de Marketing con LangGraph.
                  │            └─ rechaza ─┘   (como máximo MAX_BORRADORES borradores)
                  └─ fuera de alcance ─► fin
 
-- Estratega (LLM + tool leer_historial): entiende el pedido y arma un brief. Es el único
-  que ve el historial, para no repetir lo que ya se le mandó al segmento.
-- Redactor (LLM): escribe la pieza. Recibe solo el brief, las secciones de la guía que trae
-  el RAG y dos piezas aprobadas del mismo canal como ejemplo de formato.
-- Revisor de marca (LLM): lee la guía de marca COMPLETA y controla la pieza contra todas sus
-  reglas. Recibe solo la pieza, el pedido original y las medidas de la pieza.
+- Estratega (LLM + tool leer_historial): decide si el pedido está en alcance y arma un brief.
+  Es el único que ve el historial (del segmento, por todos los canales), para no repetir.
+- Redactor (LLM): escribe la pieza. Recibe solo los campos del brief que necesita (sin lo ya
+  comunicado), las secciones de la guía que trae el RAG y piezas del mismo canal que el segmento
+  NO recibió como ejemplo de formato (si no hay, solo el esqueleto del formato).
+- Revisor de marca (LLM): lee la guía de marca COMPLETA y responde punto por punto el checklist
+  de la guía más "datos inventados". Recibe solo la pieza, el pedido original y las medidas y
+  controles hechos con código.
 - Guardar (código): si la pieza se aprobó, la agrega al CSV (siempre, salvo que el pedido diga
   explícitamente que no; ver GUARDAR_SIEMPRE).
 
 Todas las reglas salen del PDF de la guía: el código no tiene reglas de marca escritas a mano.
 Qué recibe cada agente lo decide el código (las funciones nodo_*), no un LLM. Lo que el código
-puede verificar no se deja librado al LLM: el canal y el segmento se validan contra el historial,
-el veredicto solo aprueba si dice exactamente APROBADA, y las medidas (largo, palabras, emojis)
-se calculan con código.
+puede verificar no se deja librado al LLM:
+- el canal y el segmento se validan contra el historial;
+- las medidas (largo, palabras, emojis) se calculan con código;
+- los valores (%, $, fechas, cuotas) que no están en el pedido ni en la guía rechazan la pieza;
+- una pieza casi igual a una del historial (similitud coseno con embeddings) se rechaza;
+- solo se aprueba si el veredicto es exactamente APROBADA y ningún punto del checklist falla.
 
 main.py solo usa responder(). La etapa 2 reutiliza ejecutar_marketing().
 """
@@ -36,7 +41,8 @@ from langchain_groq import ChatGroq
 from langgraph.graph import END, START, StateGraph
 
 from tools import (SEGMENTOS, buscar_en_guia, canales_disponibles, ejemplos_de_canal,
-                   guardar_pieza, guia_completa, leer_historial, normalizar_canal)
+                   guardar_pieza, guia_completa, leer_historial, normalizar_canal,
+                   pieza_mas_parecida, rotulos_del_canal)
 
 load_dotenv()
 
@@ -48,8 +54,9 @@ llm = ChatGroq(api_key=os.getenv("GROQ_API_KEY"), model=MODELO, temperature=0.0,
 
 # Ciclo de corrección: si el revisor rechaza, el redactor reescribe UNA vez con las observaciones.
 # Es lo que hace un equipo de Marketing real (escribe → revisa → corrige) y evita descartar una
-# pieza por un detalle corregible. Se limita a 2 borradores para acotar tiempo y llamadas a Groq.
-MAX_BORRADORES = 2        # 1 borrador + 1 corrección como máximo (cada vuelta suma 2 llamadas al LLM)
+# pieza por un detalle corregible. Con 2 borradores el push (límites de 40/90 caracteres) y
+# WhatsApp quedaban rechazados seguido; con 3 alcanzan. Más vueltas suman tiempo y llamadas a Groq.
+MAX_BORRADORES = 3        # 1 borrador + 2 correcciones como máximo (cada vuelta suma 2 llamadas al LLM)
 # True: guarda toda pieza aprobada, porque la consigna pide entregar el CSV con las piezas de
 # TODAS las consultas de prueba. Un pedido que dice explícitamente "no lo guardes" gana igual.
 # False: guarda solo si el pedido lo pide ("guardalo").
@@ -141,6 +148,95 @@ def medir_pieza(texto: str, canal: str = "") -> str:
 
 
 # --------------------------------------------------------------------------
+# Controles hechos con código (antes del revisor)
+# --------------------------------------------------------------------------
+# El revisor tenía la regla de "no inventar datos" y la de no repetir, y no las aplicaba. Lo que
+# se puede verificar con código se verifica acá. No son reglas de marca: se compara la pieza
+# contra el pedido, la guía y el historial.
+
+# Valores concretos: porcentajes, montos, fechas DD/MM y cantidad de cuotas
+VALORES = re.compile(r"\d+(?:[.,]\d+)?\s*%|\$\s*\d[\d.,]*|\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b|\b\d+\s+cuotas\b",
+                     flags=re.IGNORECASE)
+MARCADOR = re.compile(r"\[[^\]]*\]")   # [X%], [DD/MM]: datos pendientes, están permitidos
+# Beneficios (cuotas, descuento, cupón...). Si el pedido no los trae, solo pueden aparecer con su
+# valor como marcador en la misma oración ("un cupón de [X%]"): es el caso del beneficio que la
+# guía pide en la recuperación de clientes. Sin marcador ("cuotas sin interés"), son inventados.
+BENEFICIOS = ["cuotas", "descuento", "cupón", "sin cargo", "gratis", "garantía", "reintegro", "bonificación"]
+# Similitud coseno a partir de la cual la pieza se considera una copia de una del historial.
+# Calibrado con el historial: entre piezas distintas el máximo es ~0.49; una pieza nueva sobre el
+# mismo tema que otra da ~0.68; una copia casi literal da ~1.0.
+UMBRAL_COPIA = 0.85
+
+
+def _valores(texto: str) -> list[str]:
+    return [re.sub(r"\s+", "", v).lower() for v in VALORES.findall(MARCADOR.sub("", texto))]
+
+
+def controles_de_codigo(texto: str, pedido: str, canal: str) -> tuple[str, list[str], dict]:
+    """Devuelve (medidas para el revisor, fallas que rechazan la pieza, pieza más parecida).
+    - Formato: si todas las piezas del canal en el historial llevan rótulos de línea ("Título:",
+      "Texto:"), la pieza nueva también tiene que llevarlos.
+    - Valores (%, $, fechas, cuotas) que no están en el pedido ni en la guía (la guía trae los
+      legales, como "CFTEA 0%"): son datos inventados y rechazan la pieza.
+    - Beneficios (cuotas, descuento, cupón...) que el pedido no trae y aparecen sin un marcador
+      [..] en la misma oración: rechazan la pieza.
+    - Similitud con la pieza más parecida del historial: si supera UMBRAL_COPIA, es una copia."""
+    permitidos = set(_valores(pedido)) | set(_valores(guia_completa()))
+    inventados = sorted({v for v in _valores(texto) if v not in permitidos})
+    oraciones = [o.lower() for o in re.split(r"[.!?\n]", texto)]
+    beneficios = [b for b in BENEFICIOS if b not in pedido.lower()
+                  and any(b in o and "[" not in o for o in oraciones)]
+    parecida = pieza_mas_parecida(texto)
+
+    medidas = [f"- Valores (%, $, fechas, cuotas) que no están en el pedido ni en la guía: "
+               f"{', '.join(inventados) if inventados else 'ninguno'}",
+               f"- Beneficios que el pedido no trae, mencionados sin marcador [..]: "
+               f"{', '.join(beneficios) if beneficios else 'ninguno'}",
+               f"- Pieza más parecida del historial: '{parecida['titulo']}' ({parecida['fecha']}, "
+               f"{parecida['segmento']}), similitud {parecida['similitud']:.2f} (copia desde {UMBRAL_COPIA})"]
+    fallas = []
+    faltan = [r for r in rotulos_del_canal(canal)
+              if not re.search(rf"^\s*{r}\s*:", texto, flags=re.IGNORECASE | re.MULTILINE)]
+    if faltan:
+        fallas.append(f"Formato (control por código): las piezas de {canal} llevan las líneas "
+                      f"{' y '.join(repr(r + ':') for r in rotulos_del_canal(canal))} dentro del TEXTO, "
+                      f"y a esta le faltan {', '.join(repr(r + ':') for r in faltan)}.")
+    if inventados:
+        fallas.append(f"Datos inventados (control por código): {', '.join(inventados)} no están en el "
+                      f"pedido. Sacalos o reemplazalos por marcadores entre corchetes ([X%], [DD/MM]).")
+    if beneficios:
+        fallas.append(f"Beneficios inventados (control por código): la pieza menciona "
+                      f"{', '.join(beneficios)}, que el pedido no trae. Sacalos (si la guía pide un "
+                      f"beneficio para esta situación, su valor va como marcador: [X%]).")
+    if parecida["similitud"] >= UMBRAL_COPIA:
+        fallas.append(f"Copia del historial (control por código): la pieza es casi igual a "
+                      f"'{parecida['titulo']}' ({parecida['fecha']}), similitud {parecida['similitud']:.2f}. "
+                      f"Escribí un mensaje nuevo, con otras frases.")
+    return "\n".join(medidas), fallas, parecida
+
+
+CAMPOS_BRIEF = r"CANAL|SEGMENTO|SITUACI[OÓ]N|OBJETIVO|DATOS DEL PEDIDO|YA COMUNICADO|[AÁ]NGULO|TONO"
+
+
+def campos_del_brief(brief: str) -> dict[str, str]:
+    """{campo: valor} del brief, con los nombres en mayúscula y sin tildes ("ANGULO", "SITUACION")."""
+    partes = re.split(rf"^\s*({CAMPOS_BRIEF})\s*:", limpiar(brief), flags=re.IGNORECASE | re.MULTILINE)
+    sin_tilde = str.maketrans("ÁÓáó", "AOao")
+    return {nombre.upper().translate(sin_tilde): valor.strip() for nombre, valor in zip(partes[1::2], partes[2::2])}
+
+
+def brief_para_redactor(brief: str, canal: str, segmento: str) -> str:
+    """Solo los campos del brief que el redactor necesita. Se deja afuera YA COMUNICADO (lo que
+    el segmento ya recibió): es para el estratega, y en manos del redactor terminaba copiado.
+    Si el brief no vino con el formato esperado, se pasa entero."""
+    campos = campos_del_brief(brief)
+    if len(campos) < 4:
+        return brief
+    campos["CANAL"], campos["SEGMENTO"] = canal, segmento
+    return "\n".join(f"{nombre}: {valor}" for nombre, valor in campos.items() if nombre != "YA COMUNICADO")
+
+
+# --------------------------------------------------------------------------
 # System prompts (rol, scope y tono de cada agente)
 # --------------------------------------------------------------------------
 
@@ -160,13 +256,24 @@ ROL: a partir de un pedido en lenguaje natural, definís QUÉ comunicar y CÓMO.
 TONO (de tu respuesta): profesional, concreto y breve. El brief es un documento interno para el
 redactor: sin adornos ni frases publicitarias.
 
-SCOPE:
-- Solo pedidos de piezas de comunicación para clientes de Hornero (posts, emails, mensajes de
-  WhatsApp, push, LinkedIn). Si el pedido es cualquier otra cosa, respondé únicamente: FUERA DE ALCANCE
-- Antes de armar el brief, usá SIEMPRE la tool leer_historial con el segmento destinatario para
-  ver qué se le comunicó hace poco, y proponé un ángulo que no repita esos mensajes.
-- Usá los fragmentos de la guía de marca que te pasamos para elegir el tono según el segmento
-  y la situación.
+SCOPE (en este orden):
+1. PRIMERO decidí si el pedido está dentro del alcance: solo piezas de comunicación para clientes
+   de Hornero (posts, emails, mensajes de WhatsApp, push, LinkedIn). Si es cualquier otra cosa,
+   respondé únicamente FUERA DE ALCANCE, sin usar ninguna tool.
+2. Recién si está dentro del alcance, usá la tool leer_historial con el segmento destinatario
+   para ver qué se le comunicó hace poco por cualquier canal, y proponé un ángulo que no repita
+   esos mensajes.
+3. Usá los fragmentos de la guía de marca que te pasamos para elegir el tono según el segmento
+   y la situación.
+
+QUÉ PUEDE OFRECER LA PIEZA:
+- La descripción de cada segmento en la guía (por ejemplo, que valoran el precio y las cuotas)
+  sirve para elegir el TONO y qué destacar de lo que el pedido trae. NO es una oferta: no
+  agregues cuotas, descuentos, cupones, envío sin cargo, garantías ni ningún otro beneficio que
+  el pedido no mencione.
+- El ÁNGULO solo puede usar lo que figura en DATOS DEL PEDIDO. Única excepción: si la guía pide
+  un elemento para esa situación (por ejemplo, un beneficio concreto en la recuperación de
+  clientes), indicalo, con todos sus valores como marcadores entre corchetes ([X%], [DD/MM]).
 
 {REGLA_NO_INVENTAR}
 
@@ -175,9 +282,9 @@ CANAL: <uno de los canales que te indico en el pedido>
 SEGMENTO: <Nuevos, Recurrentes, Premium o Todos>
 SITUACIÓN: <promoción, lanzamiento, recuperación de clientes o contenido>
 OBJETIVO: <qué queremos lograr con la pieza, en una oración>
-DATOS DEL PEDIDO: <solo los datos concretos que dio el pedido (categoría, descuento, etc.) o "ninguno">
+DATOS DEL PEDIDO: <solo lo que dice el pedido, sin agregar nada: producto o categoría, descuento, etc.>
 YA COMUNICADO: <mensajes recientes a este segmento que hay que evitar repetir>
-ÁNGULO: <la idea central de la pieza, distinta de lo ya comunicado>
+ÁNGULO: <la idea central de la pieza, distinta de lo ya comunicado y hecha solo con los DATOS DEL PEDIDO>
 TONO: <cómo hablarle a este segmento en esta situación, según la guía>
 
 Si el pedido no dice el segmento, elegí el más adecuado; si ninguno aplica, usá Todos.
@@ -193,6 +300,8 @@ SCOPE:
 - Solo escribís la pieza que pide el brief, para el canal y el segmento que indica. No cambiás
   el canal, el segmento ni el ángulo, y no agregás piezas extra ni comentarios fuera del formato.
 - Tu única fuente de reglas son los fragmentos de la guía; tu única fuente de datos, el brief.
+- El brief son instrucciones internas: no se citan ni se copian en la pieza. Escribí con tus
+  palabras lo que el brief pide, sin repetir sus frases.
 
 TONO: el que indica la guía para el segmento y la situación del brief, en español rioplatense
 con voseo: cálido, claro y práctico, como un vecino que sabe de casas.
@@ -200,23 +309,26 @@ con voseo: cálido, claro y práctico, como un vecino que sabe de casas.
 REGLAS:
 - Seguí todas las reglas de los fragmentos de la guía: voz y tono, reglas del canal (largo,
   hashtags, emojis, llamado a la acción), palabras prohibidas y legales obligatorios.
-- Copiá el FORMATO de las piezas aprobadas del mismo canal (por ejemplo, si los emails empiezan
-  con "Asunto:" o los push tienen líneas "Título:" y "Texto:"), pero no copies sus mensajes.
+- Copiá el FORMATO de las piezas de ejemplo del canal (por ejemplo, si los emails empiezan con
+  "Asunto:" o los push tienen líneas "Título:" y "Texto:"), pero no copies sus mensajes, sus
+  frases ni sus datos: los porcentajes, fechas y beneficios de un ejemplo NO valen para tu pieza.
 - Si recibís observaciones de la revisión, corregí TODAS sin cambiar lo que estaba bien.
 
 {REGLA_NO_INVENTAR}
 
 FORMATO DE RESPUESTA (exactamente estos tres campos, sin markdown):
 TITULO: <título interno corto y descriptivo de la pieza, como los del historial>
-TEXTO: <la pieza completa tal como se publica, con el mismo formato que las piezas aprobadas del canal>
+TEXTO: <la pieza completa tal como se publica, con el mismo formato que las piezas del canal; si el
+canal usa líneas como "Asunto:" o "Título:" y "Texto:", van dentro de este campo>
 IMAGEN SUGERIDA: <una sola línea describiendo la imagen que podría acompañarla>"""
 
 SYSTEM_REVISOR = """Sos revisor/a de marca de Hornero. Controlás que una pieza cumpla la guía de marca
 antes de publicarse.
 
 ROL: revisás, no reescribís. Recibís la guía de marca completa, el pedido original, la pieza y sus
-medidas (caracteres, palabras, hashtags, emojis), que fueron calculadas con exactitud: usalas en
-lugar de contar vos. Fijate qué parte de la pieza cubre cada medida antes de compararla con la guía.
+medidas y controles hechos con código (caracteres, palabras, hashtags, emojis, datos que no están
+en el pedido), que son exactos: usalos en lugar de contar vos. Fijate qué parte de la pieza cubre
+cada medida antes de compararla con la guía.
 
 SCOPE:
 - Solo controlás la pieza contra la guía de marca y el pedido original. No evaluás la estrategia
@@ -225,22 +337,30 @@ SCOPE:
 
 TONO: objetivo, preciso y breve. Cada observación nombra la regla incumplida y qué cambiar.
 
-QUÉ CONTROLÁS (todo según la guía):
-1. Reglas del canal: largo, hashtags, emojis, llamado a la acción y reglas generales.
-2. Palabras y frases prohibidas.
-3. Plazos de entrega: no se promete ninguno.
-4. Legales obligatorios si hay descuento, cuotas o envío sin cargo, en el lugar que indica la guía.
-5. Voz y tono adecuados al segmento y a la situación.
-6. Datos inventados: cualquier precio, descuento, fecha, producto o característica del producto
-   que NO esté en el pedido es un error. Los marcadores entre corchetes como [DD/MM] o [X%] están
-   permitidos: son la forma correcta de dejar datos pendientes.
+QUÉ CONTROLÁS, PUNTO POR PUNTO:
+- Puntos 1 a 7: los 7 puntos del "Checklist antes de publicar" (sección 10 de la guía), en el
+  mismo orden. Para cada uno aplicá las reglas de la guía que le corresponden (por ejemplo, para
+  el largo y los hashtags, la tabla de reglas por canal, con sus emojis y llamado a la acción).
+- Punto 8, Datos inventados: cualquier precio, porcentaje, fecha, producto, característica del
+  producto o beneficio (cuotas, descuento, cupón, envío sin cargo, garantía) que NO esté en el
+  pedido es un error, salvo que la guía lo pida para esa situación y sus valores estén como
+  marcadores entre corchetes ([DD/MM], [X%]), que son la forma correcta de dejar datos pendientes.
 
-Si la pieza cumple, aprobala aunque se pudiera escribir de otra manera.
+Cada punto lleva exactamente una de estas marcas: CUMPLE, NO CUMPLE o NO APLICA (NO APLICA solo
+si el punto es condicional y no corresponde, por ejemplo legales cuando no hay promoción).
+APROBADA solo si ningún punto es NO CUMPLE. Si la pieza cumple, aprobala aunque se pudiera
+escribir de otra manera.
 
 FORMATO DE RESPUESTA (exactamente estos campos, sin markdown):
+CHECKLIST:
+1. <punto 1 de la guía>: <CUMPLE, NO CUMPLE o NO APLICA> - <justificación breve>
+2. ... (un renglón por punto, del 1 al 8)
+8. Datos inventados: <CUMPLE, NO CUMPLE o NO APLICA> - <justificación breve>
 VEREDICTO: <solo la palabra APROBADA o la palabra RECHAZADA>
 OBSERVACIONES: <si está rechazada, lista de incumplimientos concretos, la regla de la guía que
 incumplen y cómo corregirlos; si está aprobada, "ninguna">"""
+
+PUNTOS_CHECKLIST = 8   # 7 del checklist de la guía + datos inventados
 
 # Tres agentes con create_agent, cada uno con sus tools (mínimo privilegio):
 # solo el estratega lee el historial; nadie escribe en el CSV (lo hace el nodo de código).
@@ -270,6 +390,7 @@ class EstadoMarketing(TypedDict, total=False):
     # Revisor
     aprobada: bool
     observaciones: str
+    textos_copiados: list[str]   # piezas del historial que un borrador copió: no se usan de ejemplo
     # Guardado
     resultado_guardado: str
     # Pasos para mostrar en la app (cada nodo agrega los suyos)
@@ -318,9 +439,19 @@ def nodo_redactor(estado: EstadoMarketing) -> dict:
     guia = buscar_en_guia(["voz y tono", f"reglas por canal {canal}", f"cómo hablarle al segmento {segmento}",
                            "palabras y frases prohibidas", "promociones y legales obligatorios",
                            "plazos de entrega"])
-    entrada = (f"BRIEF:\n{estado['brief']}\n\n"
+    # Ejemplos del canal que este segmento NO recibió (o solo el esqueleto del formato), para
+    # que el redactor no copie un mensaje que el segmento ya tiene
+    ejemplos = ejemplos_de_canal(canal, segmento, excluir_textos=estado.get("textos_copiados"))
+    entrada = (f"BRIEF (instrucciones internas: no se citan ni se copian en la pieza):\n"
+               f"{brief_para_redactor(estado['brief'], canal, segmento)}\n\n"
                f"FRAGMENTOS DE LA GUÍA DE MARCA:\n{guia}\n\n"
-               f"PIEZAS APROBADAS DEL CANAL {canal.upper()} (ejemplos de formato y estilo):\n{ejemplos_de_canal(canal)}")
+               f"PIEZAS DE EJEMPLO DEL CANAL {canal.upper()} (solo formato y estilo; no copies sus "
+               f"mensajes ni sus datos):\n{ejemplos}")
+    rotulos = rotulos_del_canal(canal)
+    if rotulos:   # sale del historial: todas las piezas del canal usan estas líneas
+        lineas = " y ".join(f"'{r}:'" for r in rotulos)
+        entrada += (f"\n\nFORMATO OBLIGATORIO DEL CANAL {canal.upper()}: dentro del campo TEXTO, la pieza "
+                    f"lleva las líneas {lineas}, cada una en su renglón.")
     if estado.get("observaciones") and not estado.get("aprobada", True):
         entrada += (f"\n\nTU BORRADOR ANTERIOR:\nTITULO: {estado['titulo']}\nTEXTO: {estado['texto']}\n\n"
                     f"OBSERVACIONES DE LA REVISIÓN (corregí todas):\n{estado['observaciones']}")
@@ -340,39 +471,77 @@ def nodo_revisor(estado: EstadoMarketing) -> dict:
     # El revisor lee la guía COMPLETA (es corta) para controlar todas las reglas, y recibe
     # solo la pieza y el pedido: no ve el historial ni el brief.
     medidas = medir_pieza(estado["texto"], estado["canal"])
+    controles, fallas, parecida = controles_de_codigo(estado["texto"], estado["pedido"], estado["canal"])
     entrada = (f"GUÍA DE MARCA COMPLETA:\n{guia_completa()}\n\n"
                f"========\n"
                f"CANAL: {estado['canal']}\nSEGMENTO: {estado['segmento']}\n"
                f"PEDIDO ORIGINAL: {estado['pedido']}\n\n"
                f"PIEZA A REVISAR:\nTITULO: {estado['titulo']}\nTEXTO:\n{estado['texto']}\n\n"
-               f"MEDIDAS DE LA PIEZA (calculadas con exactitud):\n{medidas}")
+               f"MEDIDAS Y CONTROLES DE LA PIEZA (calculados con código, son exactos):\n{medidas}\n{controles}")
     revision = limpiar(preguntar(agente_revisor, entrada))
     aprobada, observaciones = leer_revision(revision)
+    # Los controles de código rechazan aunque el revisor apruebe
+    if fallas:
+        aprobada = False
+        observaciones = "\n".join(["- " + f for f in fallas] + ([observaciones] if observaciones else []))
+    copiados = list(estado.get("textos_copiados") or [])
+    if parecida["similitud"] >= UMBRAL_COPIA:
+        copiados.append(parecida["texto"])
     return {
         "aprobada": aprobada,
         "observaciones": observaciones,
+        "textos_copiados": copiados,
         "pasos": [{"titulo": f"3. Revisor de marca (borrador {estado['borradores']})",
-                   "contenido": f"{medidas}\n\n{revision}"}],
+                   "contenido": "\n".join([medidas, controles, "", revision]
+                                          + (["", "CONTROLES DE CÓDIGO: rechazada", *fallas] if fallas else []))}],
     }
 
 
+MARCAS = re.compile(r"\b(NO CUMPLE|NO APLICA|CUMPLE)\b")
+
+
+def leer_checklist(revision: str) -> tuple[dict[int, str], list[str]]:
+    """Lee el bloque CHECKLIST: {número de punto: marca} y los renglones marcados NO CUMPLE.
+    Solo cuenta la PRIMERA marca exacta de cada renglón (así "NO CUMPLE" no se lee como CUMPLE)."""
+    bloque = extraer_campo(revision, "CHECKLIST", ["VEREDICTO"])
+    marcas, fallidos = {}, []
+    for linea in bloque.splitlines():
+        m = re.match(r"\s*(\d+)\s*[.)]\s*(.*)", linea)
+        if not m:
+            continue
+        marca = MARCAS.search(m.group(2))
+        marcas[int(m.group(1))] = marca.group(1) if marca else ""
+        if not marca or marca.group(1) == "NO CUMPLE":
+            fallidos.append(linea.strip())
+    return marcas, fallidos
+
+
 def leer_revision(revision: str) -> tuple[bool, str]:
-    """Interpreta la respuesta del revisor. Falla cerrado: solo se aprueba si el veredicto es
-    exactamente APROBADA ("NO APROBADA", "APROBADA con cambios" o un veredicto vacío se
-    toman como rechazo). Si rechaza sin observaciones, arma una para que el redactor sepa
-    que tiene que revisar la pieza y el usuario no vea observaciones vacías."""
+    """Interpreta la respuesta del revisor. Falla cerrado: solo se aprueba si
+    - el veredicto es exactamente APROBADA ("NO APROBADA", "APROBADA con cambios" o un
+      veredicto vacío se toman como rechazo), y
+    - el checklist trae los PUNTOS_CHECKLIST puntos, todos con CUMPLE o NO APLICA.
+    Si rechaza sin observaciones, arma una para que el redactor sepa qué corregir y el usuario
+    no vea observaciones vacías."""
     veredicto = extraer_campo(revision, "VEREDICTO").upper().strip(" .!¡:")
-    if veredicto == "APROBADA":
+    marcas, fallidos = leer_checklist(revision)
+    faltan = [str(n) for n in range(1, PUNTOS_CHECKLIST + 1) if n not in marcas]
+    if veredicto == "APROBADA" and not fallidos and not faltan:
         return True, ""
-    observaciones = extraer_campo(revision, "OBSERVACIONES", ["VEREDICTO"])
+
+    observaciones = extraer_campo(revision, "OBSERVACIONES", ["VEREDICTO", "CHECKLIST"])
     if observaciones.strip().lower().strip(" .") in ("", "ninguna"):
-        if veredicto == "RECHAZADA":
-            observaciones = "El revisor rechazó la pieza sin detallar observaciones."
-        else:
-            observaciones = (f"El revisor no devolvió un veredicto válido (APROBADA o RECHAZADA): "
-                             f"'{veredicto or 'vacío'}'.")
-        observaciones += " Revisá la pieza contra todas las reglas de la guía y corregí lo que no cumpla."
-    return False, observaciones
+        observaciones = ""
+    extra = []
+    if veredicto not in ("APROBADA", "RECHAZADA"):
+        extra.append(f"El revisor no devolvió un veredicto válido (APROBADA o RECHAZADA): '{veredicto or 'vacío'}'.")
+    if fallidos:
+        extra.append("Puntos del checklist que no cumplen:\n" + "\n".join(fallidos))
+    if faltan:
+        extra.append(f"El revisor no respondió los puntos {', '.join(faltan)} del checklist.")
+    if not observaciones and not fallidos:
+        extra.append("Revisá la pieza contra todas las reglas de la guía y corregí lo que no cumpla.")
+    return False, "\n".join(([observaciones] if observaciones else []) + extra)
 
 
 def nodo_guardar(estado: EstadoMarketing) -> dict:
