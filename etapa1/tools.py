@@ -6,7 +6,8 @@ tools.py: tools de la etapa 1 (Marketing).
 - guardar_pieza:     escritura de una pieza aprobada como fila nueva del mismo CSV.
 
 Además hay funciones comunes (sin @tool) que usa el código del grafo para decidir qué recibe
-cada agente: buscar_en_guia, guia_completa, ejemplos_de_canal, canales_disponibles.
+cada agente: buscar_en_guia, guia_completa, ejemplos_de_canal, canales_disponibles,
+normalizar_canal.
 
 Recordatorios (Clase 4):
 - El docstring de cada tool es lo que el LLM lee para decidir cuándo usarla.
@@ -14,6 +15,7 @@ Recordatorios (Clase 4):
 - Lo que devuelve una tool entra entero en el contexto del LLM: devolvemos resúmenes, no tablas enteras.
 """
 
+import re
 from datetime import date, datetime
 from pathlib import Path
 from typing import Literal
@@ -55,6 +57,28 @@ def _normalizar(texto: str) -> str:
 def canales_disponibles() -> list[str]:
     """Canales que ya existen en el historial (para que el estratega use los mismos nombres)."""
     return sorted(_leer_contenidos()["canal"].dropna().unique().tolist())
+
+
+# Otras formas de nombrar un canal que no contienen su nombre en el historial.
+# No son reglas de marca: solo sinónimos para reconocer el canal.
+ALIAS_CANAL = {"e-mail": "Email", "mail": "Email", "correo": "Email", "notificación": "Push",
+               "wsp": "WhatsApp", "wpp": "WhatsApp"}
+
+
+def normalizar_canal(texto: str) -> str | None:
+    """Lleva un canal escrito libremente ("Instagram (post)", "e-mail", "push notification")
+    al nombre exacto que usa el historial. Si hay varios, toma el primero que aparece en el
+    texto. Devuelve None si no reconoce ninguno: así no dependemos de que el LLM respete la lista."""
+    texto = _normalizar(texto)
+    canales = canales_disponibles()
+    candidatos = {c.lower(): c for c in canales}
+    candidatos.update({a: c for a, c in ALIAS_CANAL.items() if c in canales})
+    encontrados = []
+    for nombre, canal in candidatos.items():
+        m = re.search(rf"(?<!\w){re.escape(nombre)}(?!\w)", texto)
+        if m:
+            encontrados.append((m.start(), canal))
+    return min(encontrados)[1] if encontrados else None
 
 
 def buscar_en_guia(consultas: list[str], k: int = 1) -> str:
@@ -103,6 +127,9 @@ def leer_historial(segmento: Literal["Nuevos", "Recurrentes", "Premium", "Todos"
     else:
         filtro = df["segmento"].map(_normalizar).isin([_normalizar(segmento), "todos"])
     if _normalizar(canal) != "todos":
+        # "Instagram (post)" → "Instagram"; si no se reconoce el canal, se traen todos
+        canal = normalizar_canal(canal) or "todos"
+    if canal != "todos":
         filtro &= df["canal"].map(_normalizar) == _normalizar(canal)
     df = df[filtro].sort_values("fecha", ascending=False).head(cantidad)
 
@@ -123,6 +150,10 @@ def guardar_pieza(canal: str, segmento: Literal["Nuevos", "Recurrentes", "Premiu
     Usar solo con piezas que ya pasaron la revisión de marca."""
     if not (canal.strip() and titulo.strip() and texto.strip()):
         return "No se guardó: canal, título y texto no pueden estar vacíos."
+    canal_ok = normalizar_canal(canal)
+    if canal_ok is None:
+        return f"No se guardó: el canal '{canal}' no es uno de {canales_disponibles()}."
+    canal = canal_ok
     if segmento not in SEGMENTOS:
         return f"No se guardó: el segmento debe ser uno de {SEGMENTOS}."
 
