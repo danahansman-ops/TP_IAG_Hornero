@@ -618,13 +618,22 @@ flujo_marketing = grafo.compile()
 # "guardarropas" o "guardá tus cosas" contaban como pedido de guardado.
 _GUARDAR_PIEZA = (
     r"gu[aá]rd(?:[aá]|ar|e|en)l[oa]s?\b"                            # guardalo, guárdala, guardarlo
-    r"|l[oa]s?\s+gu[aá]rd(?:[aá]s|es|en|ar|amos)\b"                 # lo guardás, la guardes
+    r"|l[oa]s?\s+gu[aá]rd(?:[aá]s|es|en|ar|amos|emos)\b"            # lo guardás, la guardemos
     r"|gu[aá]rd\w*\s+(?:\w+\s+){0,3}?en\s+el\s+(?:historial|csv)\b"  # guardá la pieza en el historial
 )
 GUARDAR_SI = re.compile(rf"\b(?:{_GUARDAR_PIEZA})")
 # "no lo guardes", "sin guardarla", "no hace falta guardarlo" (pero no "tips para no guardar ropa")
-GUARDAR_NO = re.compile(rf"\b(?:no|sin)\s+(?:(?:hace\s+falta|es\s+necesario|quiero\s+que)\s+)?"
-                        rf"(?:{_GUARDAR_PIEZA})")
+# Con GUARDAR_SIEMPRE = True, un "no guardar" que no se reconoce termina guardando la pieza, así
+# que la negación acepta más formas que el pedido de guardar: "no guardar", "no guardes la pieza",
+# "que no se guarde", "no la agregues al historial", "no hace falta que la guardes".
+_NO_GUARDAR = (
+    _GUARDAR_PIEZA
+    + r"|se\s+gu[aá]rd\w*"                                                       # que no se guarde
+    + r"|gu[aá]rd\w*(?=\s*(?:[.,;:!?)]|$|nada\b|(?:la|el|esta|esa|este|ese)\s+"
+      r"(?:pieza|mensaje|post|publicaci[oó]n|e-?mail|mail|push|texto|borrador)\b))"  # no guardar.
+    + r"|(?:l[oa]s?\s+)?(?:agreg|sum|registr|carg)\w*\s+(?:\w+\s+){0,2}?(?:al|en\s+el)\s+(?:historial|csv)\b"
+)
+GUARDAR_NO = re.compile(rf"\b(?:no|sin|nunca)\s+(?:\w+\s+){{0,3}}?(?:{_NO_GUARDAR})", flags=re.MULTILINE)
 
 
 def pide_guardar(pedido: str) -> bool | None:
