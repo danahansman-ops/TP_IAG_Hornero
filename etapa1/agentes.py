@@ -37,6 +37,7 @@ from typing import Annotated, TypedDict
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
+from langchain_core.callbacks import BaseCallbackHandler
 from langchain_groq import ChatGroq
 from langgraph.graph import END, START, StateGraph
 
@@ -46,11 +47,35 @@ from tools import (SEGMENTOS, buscar_en_guia, canales_disponibles, ejemplos_de_c
 
 load_dotenv()
 
+class ContadorUso(BaseCallbackHandler):
+    """Cuenta llamadas al LLM y tokens (Clase 4). LangChain llama a on_llm_end cada vez que
+    termina una llamada; los tokens son los que informa Groq en usage_metadata.
+    Es uno solo para todo el módulo: si dos pedidos corren a la vez, los números se mezclan
+    (en la app de Streamlit, con un usuario, no pasa)."""
+
+    def __init__(self):
+        self.reiniciar()
+
+    def reiniciar(self):
+        self.llamadas, self.entrada, self.salida = 0, 0, 0
+
+    def on_llm_end(self, response, **kwargs):
+        self.llamadas += 1
+        for generaciones in response.generations:
+            for g in generaciones:
+                uso = getattr(getattr(g, "message", None), "usage_metadata", None) or {}
+                self.entrada += uso.get("input_tokens", 0)
+                self.salida += uso.get("output_tokens", 0)
+
+
+contador_uso = ContadorUso()
+
 MODELO = "openai/gpt-oss-20b"
 # reasoning_effort="low": con el valor por defecto, gpt-oss-20b a veces razona hasta agotar los
 # tokens de salida y devuelve una respuesta vacía. Además gasta muchos menos tokens.
+# callbacks: el contador lo comparten los tres agentes, porque usan este mismo llm.
 llm = ChatGroq(api_key=os.getenv("GROQ_API_KEY"), model=MODELO, temperature=0.0, max_retries=5,
-               reasoning_effort="low")
+               reasoning_effort="low", callbacks=[contador_uso])
 
 # Ciclo de corrección: si el revisor rechaza, el redactor reescribe UNA vez con las observaciones.
 # Es lo que hace un equipo de Marketing real (escribe → revisa → corrige) y evita descartar una
@@ -634,10 +659,22 @@ def formatear_respuesta(estado: EstadoMarketing) -> str:
 
 
 def ejecutar_marketing(pedido: str) -> dict:
-    """Corre el flujo completo. Devuelve {"respuesta", "detalle", "estado"}.
+    """Corre el flujo completo. Devuelve {"respuesta", "detalle", "estado", "uso"}.
+    "uso" tiene llamadas al LLM, tokens de entrada y salida, y segundos de punta a punta.
     La etapa 2 la reutiliza para integrar Marketing como un área más."""
+    contador_uso.reiniciar()
+    inicio = time.perf_counter()
     estado = flujo_marketing.invoke({"pedido": pedido, "guardar": pide_guardar(pedido), "pasos": []})
-    return {"respuesta": formatear_respuesta(estado), "detalle": estado.get("pasos", []), "estado": estado}
+    uso = {"llamadas": contador_uso.llamadas, "tokens_entrada": contador_uso.entrada,
+           "tokens_salida": contador_uso.salida, "segundos": round(time.perf_counter() - inicio, 1)}
+    return {"respuesta": formatear_respuesta(estado), "detalle": estado.get("pasos", []),
+            "estado": estado, "uso": uso}
+
+
+def describir_uso(uso: dict) -> str:
+    return (f"{uso['segundos']:.1f} segundos · {uso['llamadas']} llamadas al LLM · "
+            f"{uso['tokens_entrada'] + uso['tokens_salida']} tokens "
+            f"({uso['tokens_entrada']} de entrada, {uso['tokens_salida']} de salida)")
 
 
 def responder(pregunta: str) -> dict:
@@ -646,8 +683,9 @@ def responder(pregunta: str) -> dict:
     try:
         resultado = ejecutar_marketing(pregunta)
         respuesta, detalle = resultado["respuesta"], resultado["detalle"]
+        uso = describir_uso(resultado["uso"])
     except Exception as e:  # que la app muestre el error en vez de romperse
         respuesta, detalle = f"Ocurrió un error al procesar el pedido: {e}", []
-    segundos = time.perf_counter() - inicio
-    detalle.append({"titulo": "⏱ Tiempo de respuesta", "contenido": f"{segundos:.1f} segundos"})
+        uso = f"{time.perf_counter() - inicio:.1f} segundos (con error)"
+    detalle.append({"titulo": "⏱ Tiempo y uso", "contenido": uso})
     return {"respuesta": respuesta, "detalle": detalle}
