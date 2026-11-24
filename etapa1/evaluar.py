@@ -16,6 +16,7 @@ Ojo con el límite diario de tokens de Groq: 4 consultas x 3 corridas consumen b
 """
 
 import argparse
+import re
 import time
 from pathlib import Path
 
@@ -38,6 +39,41 @@ CONSULTAS = {
     "fuera": ("¿Quién va a ganar el Mundial?", "fuera_de_alcance"),
 }
 ESPERA = 30   # segundos entre corridas, por el límite de tokens por minuto de Groq
+ESPERA_MAX_429 = 600   # si Groq pide esperar más (límite diario), la corrida se anota como error
+
+
+def espera_429(error: Exception) -> float | None:
+    """Segundos que pide Groq en un 429 ("Please try again in 1m23.5s"); None si no es un 429."""
+    texto = str(error)
+    if "429" not in texto:
+        return None
+    m = re.search(r"try again in (?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?", texto)
+    if not m or not any(m.groups()):
+        return 60.0
+    h, mi, se = (float(g) if g else 0.0 for g in m.groups())
+    return h * 3600 + mi * 60 + se + 5
+
+
+def describir_error(error: Exception) -> str:
+    """El error en una línea; en un 429 dice qué límite de Groq se alcanzó (por minuto o por día)."""
+    texto = str(error)
+    limite = re.search(r"\((T[PR][MD])\): Limit (\d+), Used (\d+)", texto)
+    if limite:
+        return f"error 429: límite {limite.group(1)} de Groq ({limite.group(3)}/{limite.group(2)} usados)"
+    return f"error: {texto[:100]}"
+
+
+def ejecutar_con_reintentos(pedido: str, intentos: int = 3) -> dict:
+    """ejecutar_marketing, reintentando si Groq corta por límite de tokens por minuto."""
+    for intento in range(intentos):
+        try:
+            return ejecutar_marketing(pedido)
+        except Exception as e:
+            espera = espera_429(e)
+            if espera is None or espera > ESPERA_MAX_429 or intento == intentos - 1:
+                raise
+            print(f"  (Groq pidió esperar: {espera:.0f} s por el límite de tokens)")
+            time.sleep(espera)
 
 
 def funciono(estado: dict, esperado: str) -> bool:
@@ -63,34 +99,40 @@ def medir(nombre: str, pedido: str, esperado: str, corridas: int = 3, espera: in
     filas = []
     for i in range(corridas):
         try:
-            resultado = ejecutar_marketing(pedido)
+            resultado = ejecutar_con_reintentos(pedido)
             estado, uso = resultado["estado"], resultado["uso"]
             ok = funciono(estado, esperado)
-            fila = {"Consulta": nombre, "Corrida": i + 1, "Funcionó": ok,
+            fila = {"Consulta": nombre, "Corrida": i + 1, "Funcionó": ok, "Error": False,
                     "Borradores": estado.get("borradores", 0),
                     "Llamadas al LLM": uso["llamadas"], "Tokens entrada": uso["tokens_entrada"],
                     "Tokens salida": uso["tokens_salida"], "Segundos": uso["segundos"],
                     "Motivo": "" if ok else motivo(estado)}
-        except Exception as e:   # p. ej. el 429 de Groq: se registra y se sigue con la próxima
-            fila = {"Consulta": nombre, "Corrida": i + 1, "Funcionó": False, "Borradores": 0,
+        except Exception as e:   # p. ej. el límite diario de Groq: se registra y se sigue
+            # Una corrida con error no dice nada del sistema: no cuenta en la tasa de éxito
+            fila = {"Consulta": nombre, "Corrida": i + 1, "Funcionó": False, "Error": True, "Borradores": 0,
                     "Llamadas al LLM": 0, "Tokens entrada": 0, "Tokens salida": 0, "Segundos": 0.0,
-                    "Motivo": f"error: {str(e)[:100]}"}
+                    "Motivo": describir_error(e)}
         finally:
             Path(RUTA_CONTENIDOS).write_bytes(csv_original)
         filas.append(fila)
-        estado_txt = "funcionó" if fila["Funcionó"] else f"NO funcionó ({fila['Motivo']})"
+        estado_txt = ("ERROR, no cuenta" if fila["Error"] else "funcionó" if fila["Funcionó"]
+                      else "NO funcionó") + (f" ({fila['Motivo']})" if fila["Motivo"] else "")
         print(f"  Corrida {i + 1}: {estado_txt} · {fila['Borradores']} borrador/es · "
               f"{fila['Llamadas al LLM']} llamadas · "
               f"{fila['Tokens entrada'] + fila['Tokens salida']} tokens · {fila['Segundos']} s")
         if i < corridas - 1:
             time.sleep(espera)
-    aciertos = sum(f["Funcionó"] for f in filas)
-    print(f"→ {aciertos}/{corridas} corridas funcionaron")
+    validas = [f for f in filas if not f["Error"]]
+    aciertos = sum(f["Funcionó"] for f in validas)
+    errores = f" ({corridas - len(validas)} con error, no cuentan)" if len(validas) < corridas else ""
+    print(f"→ {aciertos}/{len(validas)} corridas funcionaron{errores}")
     return filas
 
 
 def resumir(filas: list[dict]) -> pd.DataFrame:
     df = pd.DataFrame(filas)
+    errores = df.groupby("Consulta", sort=False)["Error"].sum()
+    df = df[~df["Error"]]   # los promedios y la tasa salen solo de las corridas que terminaron
     df["Tokens totales"] = df["Tokens entrada"] + df["Tokens salida"]
     resumen = df.groupby("Consulta", sort=False).agg(
         Corridas=("Corrida", "count"), Funcionaron=("Funcionó", "sum"),
@@ -99,7 +141,11 @@ def resumir(filas: list[dict]) -> pd.DataFrame:
            "Tokens (prom.)": ("Tokens totales", "mean"),
            "Segundos (prom.)": ("Segundos", "mean"),
            "Segundos (máx.)": ("Segundos", "max")})
-    resumen["Tasa de éxito"] = (resumen["Funcionaron"] / resumen["Corridas"]).map("{:.0%}".format)
+    resumen = resumen.reindex(errores.index)
+    resumen["Corridas"] = resumen["Corridas"].fillna(0).astype(int)
+    resumen["Funcionaron"] = resumen["Funcionaron"].fillna(0).astype(int)
+    resumen["Con error"] = errores.astype(int)
+    resumen["Tasa de éxito"] = [f"{f / c:.0%}" if c else "-" for f, c in zip(resumen["Funcionaron"], resumen["Corridas"])]
     return resumen.round(1)
 
 
