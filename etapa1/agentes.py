@@ -197,7 +197,8 @@ UMBRAL_COPIA = 0.85
 # Tuteo (la guía, sección 2: voseo, no "compra tú"). Solo formas que no se confunden con el
 # voseo ni con sustantivos: el presente de tú ("tienes" vs "tenés") en cualquier lugar, y el
 # imperativo de tú ("Descubre" vs "Descubrí") solo al empezar una oración, donde le habla al
-# cliente (en el medio, "elige" o "encuentra" pueden ser tercera persona).
+# cliente (en el medio, "elige" o "encuentra" pueden ser tercera persona). "Dale" y "date" no
+# van: en rioplatense son iguales con vos.
 TUTEO_PRESENTE = re.compile(
     r"\b(?:tú|tienes|puedes|quieres|sabes|eres|haces|vienes|necesitas|buscas|encuentras|disfrutas|"
     r"prefieres|conoces|sientes|piensas|vives|eliges|descubres|mereces|imaginas|recibes|aprovechas)\b",
@@ -205,7 +206,7 @@ TUTEO_PRESENTE = re.compile(
 TUTEO_IMPERATIVO = {"descubre", "elige", "aprovecha", "disfruta", "renueva", "mira", "ven", "haz",
                     "pide", "conoce", "visita", "prepara", "transforma", "sigue", "encuentra", "compra",
                     "entra", "ingresa", "escoge", "imagina", "cambia", "equipa", "decora", "llena",
-                    "suma", "busca", "dale", "atrévete", "anímate", "date", "regálate"}
+                    "suma", "busca", "atrévete", "anímate", "regálate"}
 # Vigencias que dan un plazo sin fecha ("esta semana", "por tiempo limitado"): si el pedido no las
 # trae, son un dato inventado igual que una fecha. La vigencia va como marcador: [DD/MM].
 VIGENCIAS = re.compile(
