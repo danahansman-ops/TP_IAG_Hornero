@@ -7,7 +7,7 @@ tools.py: tools de la etapa 1 (Marketing).
 Además hay funciones comunes (sin @tool) que usa el código del grafo para decidir qué recibe
 cada agente y para controlar la pieza: buscar_en_guia y guia_completa (RAG sobre
 guia_de_marca.pdf, índice FAISS guardado en disco), ejemplos_de_canal, canales_disponibles,
-normalizar_canal y pieza_mas_parecida.
+normalizar_canal, pieza_mas_parecida y dominios_del_historial.
 
 Recordatorios (Clase 4):
 - El docstring de cada tool es lo que el LLM lee para decidir cuándo usarla.
@@ -149,6 +149,13 @@ def rotulos_del_canal(canal: str) -> list[str]:
         return []
     return [r for r in ["Asunto", "Título", "Texto"]
             if all(re.search(rf"^\s*{r}\s*:", t, flags=re.IGNORECASE | re.MULTILINE) for t in textos)]
+
+
+def dominios_del_historial() -> set[str]:
+    """Dominios web que usan las piezas aprobadas (por ejemplo hornero.com.ar). Un link a otro
+    dominio en una pieza nueva es inventado."""
+    textos = " ".join(_leer_contenidos()["texto"].astype(str)).lower()
+    return set(re.findall(r"\b((?:[a-z0-9-]+\.)+(?:com|net|org)(?:\.ar)?)\b", textos))
 
 
 def pieza_mas_parecida(texto: str) -> dict:

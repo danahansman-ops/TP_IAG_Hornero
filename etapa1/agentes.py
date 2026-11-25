@@ -25,10 +25,13 @@ deja librado al LLM:
 - los valores (%, $, fechas, cuotas) que no están en el pedido ni en la guía rechazan la pieza;
 - una pieza casi igual a una del historial (similitud coseno con embeddings) se rechaza;
 - solo se aprueba si el veredicto es exactamente APROBADA y ningún punto del checklist falla.
-Además hay cuatro listas escritas a mano, para reglas de la guía que el revisor tenía y no
-aplicaba (las corridas lo muestran): beneficios (BENEFICIOS), tuteo (TUTEO_*), vigencias sin
-fecha (VIGENCIAS) y términos internos del brief (TERMINOS_DEL_BRIEF). Son listas cortas, de
-formas sin ambigüedad, porque un falso positivo gasta un borrador sin que lo vea el revisor.
+- los límites de largo, emojis y hashtags se leen de la tabla de reglas por canal de la guía y
+  se comparan con código (limites_del_canal).
+Además hay listas escritas a mano, para reglas de la guía que el revisor tenía y no aplicaba
+(las corridas lo muestran): beneficios (BENEFICIOS), tuteo (TUTEO_*), vigencias sin fecha
+(VIGENCIAS), términos internos del brief (TERMINOS_DEL_BRIEF), contactos (CONTACTOS) y
+características del producto (CARACTERISTICAS). Son listas cortas, de formas sin ambigüedad,
+porque un falso positivo gasta un borrador sin que lo vea el revisor.
 
 main.py solo usa responder(). La etapa 2 reutiliza ejecutar_marketing().
 """
@@ -45,7 +48,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_groq import ChatGroq
 from langgraph.graph import END, START, StateGraph
 
-from tools import (SEGMENTOS, buscar_en_guia, canales_disponibles, ejemplos_de_canal,
+from tools import (SEGMENTOS, buscar_en_guia, canales_disponibles, dominios_del_historial, ejemplos_de_canal,
                    guardar_pieza, guia_completa, leer_historial, normalizar_canal,
                    pieza_mas_parecida, rotulos_del_canal)
 
@@ -212,7 +215,12 @@ TUTEO_PRESENTE = re.compile(
     flags=re.IGNORECASE)
 TUTEO_IMPERATIVO = {"descubre", "elige", "aprovecha", "disfruta", "renueva", "mira", "ven", "haz",
                     "pide", "conoce", "prepara", "transforma", "encuentra", "ingresa", "escoge",
-                    "imagina", "equipa", "decora", "atrévete", "anímate", "regálate"}
+                    "imagina", "equipa", "decora", "atrévete", "anímate", "regálate",
+                    # llamados a la acción en tú ("Abre la app": la guía lo escribe así en la tabla
+                    # de canales para describir el push, pero en la pieza va "Abrí la app")
+                    "abre", "toca", "descarga", "escribe", "pulsa", "accede", "aprende", "únete",
+                    "suscríbete", "regístrate", "cuéntanos", "escríbenos", "llámanos", "contáctanos",
+                    "déjanos"}
 # Vigencias que dan un plazo sin fecha ("esta semana", "por tiempo limitado"): en una promoción,
 # si el pedido no las trae, son un dato inventado igual que una fecha y van como marcador
 # [DD/MM]. Solo se controlan si la pieza tiene un beneficio o un %: en un post de tips, "este
@@ -264,13 +272,97 @@ def beneficios_no_pedidos(texto: str, pedido: str) -> list[str]:
             and any(b in o and "[" not in o for o in oraciones)]
 
 
+# Datos de contacto: un email o un teléfono que el pedido no trae es inventado (la guía pide
+# "un canal directo de contacto", pero el dato lo pone Marketing: [CONTACTO]).
+CONTACTOS = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+|\b0800[\s-]?\d{3}[\s-]?\d{3,4}\b|"
+                       r"\b\d{2,4}[\s-]\d{4}[\s-]\d{4}\b")
+DOMINIO = re.compile(r"\b((?:[a-z0-9-]+\.)+(?:com|net|org)(?:\.ar)?)\b")
+# Características del producto que la regla de NO INVENTAR prohíbe si el pedido no las trae
+# (materiales, terminaciones, durabilidad...). El revisor las aprobaba: "materiales resistentes",
+# "diseñados para el clima argentino", "personalizá cada pieza".
+CARACTERISTICAS = re.compile(
+    r"\b(?:resistent\w*|resisten\b|impermeable\w*|durader\w*|artesanal\w*|materiales?\b|acabados?\b|"
+    r"terminaciones?\b|personaliz\w*|a\s+medida\b(?!\s+que)|dise[ñn]ad[oa]s?\s+para\s+el\s+clima)",
+    flags=re.IGNORECASE)
+
+
+def contactos_inventados(texto: str, pedido: str) -> list[str]:
+    sin_marcadores = MARCADOR.sub("", texto)
+    contactos = {c for c in CONTACTOS.findall(sin_marcadores) if c not in pedido}
+    sin_emails = re.sub(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+", "", sin_marcadores.lower())
+    permitidos = dominios_del_historial() | set(DOMINIO.findall(pedido.lower()))
+    links = {d for d in DOMINIO.findall(sin_emails) if d not in permitidos}
+    return sorted(contactos | links)
+
+
+def caracteristicas_inventadas(texto: str, pedido: str) -> list[str]:
+    return sorted({m.group(0).lower() for m in CARACTERISTICAS.finditer(texto)
+                   if m.group(0).lower() not in pedido.lower()})
+
+
+def limites_del_canal(canal: str) -> dict:
+    """Límites del canal leídos de la tabla "Reglas por canal" de la guía (no escritos a mano):
+    caracteres, título y texto (push), asunto y palabras del cuerpo (email), emojis y hashtags.
+    Si la guía no tiene la fila o no se entiende, devuelve {} y no se controla nada."""
+    fila = next((l for l in guia_completa().splitlines() if l.strip().startswith("- Canal:")
+                 and normalizar_canal(l.split("|")[0].split(":", 1)[1]) == canal), None)
+    if fila is None:
+        return {}
+    celdas = {c.split(":", 1)[0].strip().lower(): c.split(":", 1)[1].strip()
+              for c in fila.strip(" -").split("|") if ":" in c}
+    numero = lambda patron, texto: (int(m.group(1).replace(".", "")) if (m := re.search(patron, texto, re.I)) else None)
+    largo, emojis, hashtags = celdas.get("largo máximo", ""), celdas.get("emojis", ""), celdas.get("hashtags", "")
+    limites = {"titulo": numero(r"t[ií]tulo de ([\d.]+)", largo), "texto": numero(r"texto de ([\d.]+)", largo),
+               "asunto": numero(r"asunto de ([\d.]+)", largo), "palabras_cuerpo": numero(r"cuerpo de hasta ([\d.]+) palabras", largo)}
+    if not any(limites.values()):
+        limites["caracteres"] = numero(r"^([\d.]+) caracteres", largo)
+    limites["emojis"] = 0 if "ninguno" in emojis.lower() else numero(r"hasta (\d+)", emojis)
+    if hashtags.lower().startswith("no"):
+        limites["hashtags"] = (0, 0)
+    elif (m := re.match(r"(\d+)\s*(?:a|o)\s*(\d+)", hashtags)):
+        limites["hashtags"] = (int(m.group(1)), int(m.group(2)))
+    limites["hashtag_obligatorio"] = (re.search(r"siempre incluye (#\w+)", hashtags) or [None, None])[1]
+    return {k: v for k, v in limites.items() if v is not None}
+
+
+def fallas_de_limites(texto: str, canal: str) -> list[str]:
+    """Compara las medidas de la pieza con los límites del canal y dice cuánto sobra: "recortá al
+    menos 9" le sirve al redactor más que "excede el límite" (WhatsApp fallaba 3 borradores así)."""
+    lim, fallas = limites_del_canal(canal), []
+    def linea(rotulo):
+        m = re.search(rf"^\s*{rotulo}\s*:\s*([^\n]*)", texto, flags=re.IGNORECASE | re.MULTILINE)
+        return m.group(1).strip() if m else None
+    medidas = [("caracteres", "la pieza", len(ROTULO.sub("", texto)), "caracteres"),
+               ("titulo", "la línea 'Título:'", len(linea("Título") or ""), "caracteres"),
+               ("texto", "la línea 'Texto:'", len(linea("Texto") or ""), "caracteres"),
+               ("asunto", "el asunto", len(linea("Asunto") or ""), "caracteres"),
+               ("emojis", "la pieza", len(EMOJI.findall(texto)), "emojis")]
+    if "palabras_cuerpo" in lim:
+        cuerpo, _ = cuerpo_de_email(texto)
+        if cuerpo is not None:
+            medidas.append(("palabras_cuerpo", "el cuerpo del email", palabras_de(cuerpo), "palabras"))
+    for clave, que, valor, unidad in medidas:
+        if clave in lim and valor > lim[clave]:
+            fallas.append(f"Largo (control por código, tabla de la guía para {canal}): {que} admite hasta "
+                          f"{lim[clave]} {unidad} y tiene {valor}. Recortá al menos {valor - lim[clave]}.")
+    if "hashtags" in lim:
+        n, (minimo, maximo) = len(re.findall(r"#\w+", texto)), lim["hashtags"]
+        if not minimo <= n <= maximo:
+            fallas.append(f"Hashtags (control por código, tabla de la guía para {canal}): van de {minimo} a "
+                          f"{maximo} y la pieza tiene {n}.")
+    obligatorio = lim.get("hashtag_obligatorio")
+    if obligatorio and obligatorio.lower() not in texto.lower():
+        fallas.append(f"Hashtags (control por código, tabla de la guía para {canal}): falta {obligatorio}.")
+    return fallas
+
+
 def trae_datos_ajenos(texto: str, pedido: str) -> bool:
     """True si una pieza del historial tiene beneficios o valores (%, $, fechas) que el pedido
     no trae: no sirve de ejemplo, porque el redactor copiaba esas promociones."""
     return bool(beneficios_no_pedidos(texto, pedido)) or any(v not in _valores(pedido) for v in _valores(texto))
 
 
-def controles_de_codigo(texto: str, pedido: str, canal: str) -> tuple[str, list[str], dict]:
+def controles_de_codigo(texto: str, pedido: str, canal: str, situacion: str = "") -> tuple[str, list[str], dict]:
     """Devuelve (medidas para el revisor, fallas que rechazan la pieza, pieza más parecida).
     - Formato: si todas las piezas del canal en el historial llevan rótulos de línea ("Título:",
       "Texto:"), la pieza nueva también tiene que llevarlos.
@@ -285,6 +377,8 @@ def controles_de_codigo(texto: str, pedido: str, canal: str) -> tuple[str, list[
     tuteo = formas_de_tuteo(texto)
     vigencias = vigencias_no_pedidas(texto, pedido)
     internos = terminos_del_brief(texto)
+    contactos = contactos_inventados(texto, pedido)
+    caracteristicas = caracteristicas_inventadas(texto, pedido)
     parecida = pieza_mas_parecida(texto)
 
     medidas = [f"- Valores (%, $, fechas, cuotas) que no están en el pedido ni en la guía: "
@@ -295,9 +389,13 @@ def controles_de_codigo(texto: str, pedido: str, canal: str) -> tuple[str, list[
                f"- Vigencias sin fecha que el pedido no trae (\"esta semana\"...): "
                f"{', '.join(vigencias) if vigencias else 'ninguna'}",
                f"- Términos internos del brief en la pieza: {', '.join(internos) if internos else 'ninguno'}",
+               f"- Contactos o links que no están en el pedido ni en el historial: "
+               f"{', '.join(contactos) if contactos else 'ninguno'}",
+               f"- Características del producto que el pedido no trae: "
+               f"{', '.join(caracteristicas) if caracteristicas else 'ninguna'}",
                f"- Pieza más parecida del historial: '{parecida['titulo']}' ({parecida['fecha']}, "
                f"{parecida['segmento']}), similitud {parecida['similitud']:.2f} (copia desde {UMBRAL_COPIA})"]
-    fallas = []
+    fallas = fallas_de_limites(texto, canal)
     faltan = [r for r in rotulos_del_canal(canal)
               if not re.search(rf"^\s*{r}\s*:", texto, flags=re.IGNORECASE | re.MULTILINE)]
     if faltan:
@@ -313,10 +411,20 @@ def controles_de_codigo(texto: str, pedido: str, canal: str) -> tuple[str, list[
                       f"beneficio para esta situación, su valor va como marcador: [X%]).")
     if tuteo:
         fallas.append(f"Tuteo (control por código): {', '.join(tuteo)}. La guía pide voseo rioplatense "
-                      f"(\"tenés\", \"podés\", \"descubrí\", \"elegí\").")
+                      f"(\"tenés\", \"podés\", \"descubrí\", \"elegí\", \"abrí la app\", \"para vos\").")
     if vigencias:
         fallas.append(f"Vigencia inventada (control por código): {', '.join(vigencias)} no está en el "
                       f"pedido. Sacala o usá un marcador ([DD/MM]).")
+    if contactos:
+        fallas.append(f"Contacto inventado (control por código): {', '.join(contactos)} no está en el pedido "
+                      f"ni en el historial. Usá un marcador ([CONTACTO], [LINK]) o un link de "
+                      f"{', '.join(sorted(dominios_del_historial())) or 'Hornero'}.")
+    if caracteristicas:
+        fallas.append(f"Características inventadas (control por código): {', '.join(caracteristicas)}. El pedido "
+                      f"no dice cómo está hecho el producto: contá para qué sirve, no cómo está hecho.")
+    if "recuperaci" in situacion.lower() and not any(b in texto.lower() for b in BENEFICIOS):
+        fallas.append("Recuperación de clientes (control por código, sección 8 de la guía): falta ofrecer un "
+                      "beneficio concreto con legales, por ejemplo un cupón de [X%] con su vigencia [DD/MM].")
     if internos:
         fallas.append(f"Brief filtrado (control por código): la pieza dice {', '.join(internos)}, que son "
                       f"instrucciones internas. Escribí el texto para el cliente, sin nombrarlas.")
@@ -376,8 +484,12 @@ REGLA_NO_INVENTAR = """NO INVENTAR DATOS:
   descuento, fechas de vigencia, plazos de entrega, stock, cuotas, nombres de productos o colecciones.
 - Tampoco inventes características del producto (materiales, terminaciones, medidas, garantías,
   "artesanal", "premium") ni beneficios que el pedido no menciona. Contá para qué sirve, no cómo está hecho.
+- Tampoco inventes datos de contacto: emails, teléfonos ni links de otros dominios. Usá
+  [CONTACTO] o [LINK], o los links de Hornero que aparecen en los ejemplos.
 - Si la pieza necesita un dato que el pedido no da (por ejemplo la vigencia de un descuento),
-  dejá un marcador entre corchetes para que Marketing lo complete: [DD/MM], [X%], [CÓDIGO]."""
+  dejá un marcador entre corchetes para que Marketing lo complete: [DD/MM], [X%], [CÓDIGO].
+- La tabla de canales de la guía describe el llamado del push como "Abre la app": en la pieza
+  va en voseo, "Abrí la app"."""
 
 SYSTEM_ESTRATEGA = f"""Sos estratega de contenidos del equipo de Marketing de Hornero, un e-commerce
 argentino de artículos para el hogar y electro que vende por web, app y marketplaces.
@@ -476,6 +588,10 @@ QUÉ CONTROLÁS, PUNTO POR PUNTO:
   producto o beneficio (cuotas, descuento, cupón, envío sin cargo, garantía) que NO esté en el
   pedido es un error, salvo que la guía lo pida para esa situación y sus valores estén como
   marcadores entre corchetes ([DD/MM], [X%]), que son la forma correcta de dejar datos pendientes.
+
+VOSEO (punto 1): las formas de vos llevan la tilde al final ("elegí", "escogé", "tenés", "abrí",
+"descubrí") y son voseo correcto. Marcá NO CUMPLE en el punto 1 solo si citás una palabra en tú
+("tienes", "elige", "abre", "ti") o en usted.
 
 Cada punto lleva exactamente una de estas marcas: CUMPLE, NO CUMPLE o NO APLICA (NO APLICA solo
 si el punto es condicional y no corresponde, por ejemplo legales cuando no hay promoción).
@@ -617,7 +733,8 @@ def nodo_revisor(estado: EstadoMarketing) -> dict:
     # El revisor lee la guía COMPLETA (es corta) para controlar todas las reglas, y recibe
     # solo la pieza y el pedido: no ve el historial ni el brief.
     medidas = medir_pieza(estado["texto"], estado["canal"])
-    controles, fallas, parecida = controles_de_codigo(estado["texto"], estado["pedido"], estado["canal"])
+    situacion = campos_del_brief(estado.get("brief", "")).get("SITUACION", "")
+    controles, fallas, parecida = controles_de_codigo(estado["texto"], estado["pedido"], estado["canal"], situacion)
     entrada = (f"GUÍA DE MARCA COMPLETA:\n{guia_completa()}\n\n"
                f"========\n"
                f"CANAL: {estado['canal']}\nSEGMENTO: {estado['segmento']}\n"
