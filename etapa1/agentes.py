@@ -537,6 +537,17 @@ REGLA_NO_INVENTAR = """NO INVENTAR DATOS:
 - Si la pieza necesita un dato que el pedido no da (por ejemplo la vigencia de un descuento),
   dejá un marcador entre corchetes para que Marketing lo complete: [DD/MM], [X%], [CÓDIGO]."""
 
+# Recuperación de clientes: la guía (sección 8) pide contar qué estamos haciendo para mejorar, pero
+# el pedido no trae ese dato, y el redactor lo inventaba ("un problema técnico... ya lo
+# solucionamos", "un transportista dedicado"). No se resuelve con una lista de palabras: el dato
+# va como marcador para que lo complete Marketing, igual que el valor del cupón.
+NOTA_RECUPERACION = """RECUPERACIÓN DE CLIENTES (sección 8 de la guía):
+- Reconocé el problema que dice el pedido, sin explicar su causa: el pedido no la da, y la guía
+  pide no dar excusas ni culpar a terceros.
+- Lo que Hornero está haciendo para mejorar va como marcador, [ACCIÓN DE MEJORA], salvo que el
+  pedido lo diga. No inventes medidas, servicios ni canales de atención.
+- El beneficio va con su valor como marcador: un cupón de [X%], válido del [DD/MM] al [DD/MM]."""
+
 # Aclaraciones de la guía que valen para UN canal. Van solo en la entrada del redactor de ese
 # canal: en el prompt general, el email copiaba el link de legales de WhatsApp y el WhatsApp
 # cerraba con "Abrí la app", que es el llamado del push.
@@ -544,6 +555,9 @@ NOTAS_DEL_CANAL = {
     "WhatsApp": ('Los legales van como link a "Bases y condiciones" (sección 6 de la guía), por ejemplo '
                  '"Bases y condiciones: hornero.com.ar/legales", no con el texto completo: así entra en '
                  'los 300 caracteres. El llamado a la acción es un link corto.'),
+    "Instagram": 'El llamado a la acción es exactamente "Link en la bio" o "Encontralo en la app", sin mezclarlos.',
+    "Email": ('Los legales del beneficio van completos al pie, después del botón (sección 6 de la guía), una '
+              'sola vez. El link a "Bases y condiciones" es el formato de WhatsApp, no del email.'),
     "Push": ('La tabla de la guía describe el llamado como "Abre la app": en la pieza va en voseo, '
              '"Abrí la app". Los 90 caracteres de la línea "Texto:" incluyen "Abrí la app." y el emoji: '
              'son unas 14 palabras en total, en oraciones completas.'),
@@ -618,7 +632,8 @@ REGLAS:
 {REGLA_NO_INVENTAR}
 
 FORMATO DE RESPUESTA (exactamente estos tres campos, sin markdown):
-TITULO: <título interno corto y descriptivo de la pieza, como los del historial>
+TITULO: <título interno corto y descriptivo, como los del historial ("Recuperación: entrega con
+problemas", "Lanzamiento colección Nórdica"): describe la pieza para Marketing, no le habla al cliente>
 TEXTO: <la pieza completa tal como se publica, con el mismo formato que las piezas del canal; si el
 canal usa líneas como "Asunto:" o "Título:" y "Texto:", van dentro de este campo>
 IMAGEN SUGERIDA: <una sola línea describiendo la imagen que podría acompañarla>"""
@@ -780,6 +795,8 @@ def nodo_redactor(estado: EstadoMarketing) -> dict:
         entrada += f"\n\nREGLAS DEL CANAL {canal.upper()} (fila de la tabla de la guía): {fila}"
     if canal in NOTAS_DEL_CANAL:
         entrada += f"\n{NOTAS_DEL_CANAL[canal]}"
+    if "recuperaci" in campos_del_brief(estado["brief"]).get("SITUACION", "").lower():
+        entrada += f"\n\n{NOTA_RECUPERACION}"
     rotulos = rotulos_del_canal(canal)
     if rotulos:   # sale del historial: todas las piezas del canal usan estas líneas
         lineas = " y ".join(f"'{r}:'" for r in rotulos)

@@ -9,6 +9,7 @@ Cómo correrlo (desde esta carpeta, con el venv activado):
     python evaluar.py                      # las 4 consultas de la consigna, 3 corridas cada una
     python evaluar.py --corridas 5 --consultas 3 4
     python evaluar.py --consultas fuera    # el caso límite fuera de alcance
+    python evaluar.py --consultas e1 e2 e3 --corridas 2   # pedidos que no están en la consigna
 
 "Funcionó" quiere decir que la pieza quedó aprobada (por el revisor y por los controles de
 código). Aprobada no es lo mismo que bien escrita: el CSV de salida guarda el texto de cada
@@ -41,6 +42,14 @@ CONSULTAS = {
     "4": ("Armá un push para clientes Recurrentes sobre aires acondicionados que no repita lo que "
           "ya les mandamos.", "aprobada"),
     "fuera": ("¿Quién va a ganar el Mundial?", "fuera_de_alcance"),
+    # Pedidos que NO están en la consigna, para ver que los controles no rechazan de más con
+    # canales, segmentos y datos distintos (LinkedIn, "Todos", envío sin cargo con fecha, tips)
+    "e1": ("Escribí un post de LinkedIn contando que abrimos un nuevo centro de distribución en "
+           "Neuquén.", "aprobada"),
+    "e2": ("Armá un email para clientes Premium con envío sin cargo en compras de Living hasta el "
+           "15/12.", "aprobada"),
+    "e3": ("Hacé un post de Instagram para todos los clientes con tips para ordenar el placard.",
+           "aprobada"),
 }
 ESPERA = 30   # segundos entre corridas, por el límite de tokens por minuto de Groq
 ESPERA_MAX_429 = 600   # si Groq pide esperar más (límite diario), la corrida se anota como error
@@ -96,8 +105,11 @@ def motivo(estado: dict) -> str:
     return lineas[0][:120] if lineas else ""
 
 
-def medir(nombre: str, pedido: str, esperado: str, corridas: int = 3, espera: int = ESPERA) -> list[dict]:
-    """Corre el mismo pedido varias veces y devuelve una fila por corrida."""
+def medir(nombre: str, pedido: str, esperado: str, corridas: int = 3, espera: int = ESPERA,
+          al_terminar_corrida=None) -> list[dict]:
+    """Corre el mismo pedido varias veces y devuelve una fila por corrida. al_terminar_corrida(fila)
+    se llama después de cada una, para guardarla enseguida: si la evaluación se corta (límite diario
+    de Groq, Ctrl+C), las corridas que ya terminaron no se pierden."""
     print(f"\nConsulta {nombre}: {pedido}")
     csv_original = Path(RUTA_CONTENIDOS).read_bytes()
     filas = []
@@ -124,6 +136,8 @@ def medir(nombre: str, pedido: str, esperado: str, corridas: int = 3, espera: in
         finally:
             Path(RUTA_CONTENIDOS).write_bytes(csv_original)
         filas.append(fila)
+        if al_terminar_corrida:
+            al_terminar_corrida(fila)
         estado_txt = ("ERROR, no cuenta" if fila["Error"] else "funcionó" if fila["Funcionó"]
                       else "NO funcionó") + (f" ({fila['Motivo']})" if fila["Motivo"] else "")
         print(f"  Corrida {i + 1}: {estado_txt} · {fila['Borradores']} borrador/es · "
@@ -168,13 +182,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     filas = []
+    guardar = lambda fila: (filas.append(fila), pd.DataFrame(filas).to_csv(args.salida, index=False))
     for n, nombre in enumerate(args.consultas):
         pedido, esperado = CONSULTAS[nombre]
-        filas += medir(nombre, pedido, esperado, args.corridas, args.espera)
+        medir(nombre, pedido, esperado, args.corridas, args.espera, al_terminar_corrida=guardar)
         if n < len(args.consultas) - 1:
             time.sleep(args.espera)
 
-    pd.DataFrame(filas).to_csv(args.salida, index=False)
     print("\nResumen:\n")
     print(resumir(filas).to_string())
     print(f"\nDetalle por corrida guardado en {args.salida}")
