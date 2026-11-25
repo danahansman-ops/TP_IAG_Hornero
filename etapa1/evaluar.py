@@ -10,6 +10,10 @@ Cómo correrlo (desde esta carpeta, con el venv activado):
     python evaluar.py --corridas 5 --consultas 3 4
     python evaluar.py --consultas fuera    # el caso límite fuera de alcance
 
+"Funcionó" quiere decir que la pieza quedó aprobada (por el revisor y por los controles de
+código). Aprobada no es lo mismo que bien escrita: el CSV de salida guarda el texto de cada
+pieza y las observaciones, para leerlas y elegir casos buenos y malos para el informe.
+
 Cada corrida parte del mismo historial: el CSV se restaura después de cada una, así una pieza
 guardada en la corrida 1 no cambia lo que ve la corrida 2 (ni queda en el entregable).
 Ojo con el límite diario de tokens de Groq: 4 consultas x 3 corridas consumen buena parte.
@@ -106,12 +110,17 @@ def medir(nombre: str, pedido: str, esperado: str, corridas: int = 3, espera: in
                     "Borradores": estado.get("borradores", 0),
                     "Llamadas al LLM": uso["llamadas"], "Tokens entrada": uso["tokens_entrada"],
                     "Tokens salida": uso["tokens_salida"], "Segundos": uso["segundos"],
-                    "Motivo": "" if ok else motivo(estado)}
+                    "Motivo": "" if ok else motivo(estado),
+                    # La pieza y la revisión, para leerlas: aprobar no es lo mismo que estar bien
+                    "Canal": estado.get("canal", ""), "Segmento": estado.get("segmento", ""),
+                    "Título": estado.get("titulo", ""), "Texto": estado.get("texto", ""),
+                    "Observaciones": estado.get("observaciones", "")}
         except Exception as e:   # p. ej. el límite diario de Groq: se registra y se sigue
             # Una corrida con error no dice nada del sistema: no cuenta en la tasa de éxito
             fila = {"Consulta": nombre, "Corrida": i + 1, "Funcionó": False, "Error": True, "Borradores": 0,
                     "Llamadas al LLM": 0, "Tokens entrada": 0, "Tokens salida": 0, "Segundos": 0.0,
-                    "Motivo": describir_error(e)}
+                    "Motivo": describir_error(e), "Canal": "", "Segmento": "", "Título": "", "Texto": "",
+                    "Observaciones": ""}
         finally:
             Path(RUTA_CONTENIDOS).write_bytes(csv_original)
         filas.append(fila)

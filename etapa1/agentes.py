@@ -77,7 +77,7 @@ MODELO = "openai/gpt-oss-20b"
 llm = ChatGroq(api_key=os.getenv("GROQ_API_KEY"), model=MODELO, temperature=0.0, max_retries=5,
                reasoning_effort="low", callbacks=[contador_uso])
 
-# Ciclo de corrección: si el revisor rechaza, el redactor reescribe UNA vez con las observaciones.
+# Ciclo de corrección: si el revisor rechaza, el redactor reescribe con las observaciones.
 # Es lo que hace un equipo de Marketing real (escribe → revisa → corrige) y evita descartar una
 # pieza por un detalle corregible. Con 2 borradores el push (límites de 40/90 caracteres) y
 # WhatsApp quedaban rechazados seguido; con 3 alcanzan. Más vueltas suman tiempo y llamadas a Groq.
@@ -186,15 +186,65 @@ MARCADOR = re.compile(r"\[[^\]]*\]")   # [X%], [DD/MM]: datos pendientes, están
 # Beneficios (cuotas, descuento, cupón...). Si el pedido no los trae, solo pueden aparecer con su
 # valor como marcador en la misma oración ("un cupón de [X%]"): es el caso del beneficio que la
 # guía pide en la recuperación de clientes. Sin marcador ("cuotas sin interés"), son inventados.
-BENEFICIOS = ["cuotas", "descuento", "cupón", "sin cargo", "gratis", "garantía", "reintegro", "bonificación"]
+BENEFICIOS = ["cuotas", "descuento", "cupón", "sin cargo", "gratis", "garantía", "reintegro", "bonificación",
+              "financiación", "facilidades de pago", "opciones de pago", "pago flexible", "pagos flexibles"]
 # Similitud coseno a partir de la cual la pieza se considera una copia de una del historial.
 # Calibrado con el historial: entre piezas distintas el máximo es ~0.49; una pieza nueva sobre el
 # mismo tema que otra da ~0.68; una copia casi literal da ~1.0.
 UMBRAL_COPIA = 0.85
 
 
+# Tuteo (la guía, sección 2: voseo, no "compra tú"). Solo formas que no se confunden con el
+# voseo ni con sustantivos: el presente de tú ("tienes" vs "tenés") en cualquier lugar, y el
+# imperativo de tú ("Descubre" vs "Descubrí") solo al empezar una oración, donde le habla al
+# cliente (en el medio, "elige" o "encuentra" pueden ser tercera persona).
+TUTEO_PRESENTE = re.compile(
+    r"\b(?:tú|tienes|puedes|quieres|sabes|eres|haces|vienes|necesitas|buscas|encuentras|disfrutas|"
+    r"prefieres|conoces|sientes|piensas|vives|eliges|descubres|mereces|imaginas|recibes|aprovechas)\b",
+    flags=re.IGNORECASE)
+TUTEO_IMPERATIVO = {"descubre", "elige", "aprovecha", "disfruta", "renueva", "mira", "ven", "haz",
+                    "pide", "conoce", "visita", "prepara", "transforma", "sigue", "encuentra", "compra",
+                    "entra", "ingresa", "escoge", "imagina", "cambia", "equipa", "decora", "llena",
+                    "suma", "busca", "dale", "atrévete", "anímate", "date", "regálate"}
+# Vigencias que dan un plazo sin fecha ("esta semana", "por tiempo limitado"): si el pedido no las
+# trae, son un dato inventado igual que una fecha. La vigencia va como marcador: [DD/MM].
+VIGENCIAS = re.compile(
+    r"\b(?:esta\s+semana|este\s+(?:mes|fin\s+de\s+semana|finde)|solo\s+por\s+hoy|s[oó]lo\s+hoy|"
+    r"hasta\s+(?:el\s+)?(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)|"
+    r"por\s+tiempo\s+limitado|[uú]ltimos\s+d[ií]as|por\s+pocos\s+d[ií]as|hasta\s+fin\s+de\s+mes)\b",
+    flags=re.IGNORECASE)
+
+
+def formas_de_tuteo(texto: str) -> list[str]:
+    encontradas = [m.group(0) for m in TUTEO_PRESENTE.finditer(texto)]
+    for oracion in re.split(r"[.!?¡¿\n]", texto):
+        primera = re.match(r"[^\wáéíóúñ]*([\wáéíóúñ]+)", oracion.strip(), flags=re.IGNORECASE)
+        if primera and primera.group(1).lower() in TUTEO_IMPERATIVO:
+            encontradas.append(primera.group(1))
+    return sorted(set(encontradas), key=str.lower)
+
+
+def vigencias_no_pedidas(texto: str, pedido: str) -> list[str]:
+    pedidas = {re.sub(r"\s+", " ", v).lower() for v in VIGENCIAS.findall(pedido)}
+    return sorted({re.sub(r"\s+", " ", v).lower() for v in VIGENCIAS.findall(MARCADOR.sub("", texto))} - pedidas)
+
+
 def _valores(texto: str) -> list[str]:
     return [re.sub(r"\s+", "", v).lower() for v in VALORES.findall(MARCADOR.sub("", texto))]
+
+
+def beneficios_no_pedidos(texto: str, pedido: str) -> list[str]:
+    """Beneficios que el pedido no trae y que el texto menciona sin un marcador [..] en la
+    misma oración. Se usa para la pieza y también para el brief del estratega."""
+    oraciones = [o.lower() for o in re.split(r"[.!?\n]", texto)]
+    return [b for b in BENEFICIOS if b not in pedido.lower()
+            and any(b in o and "[" not in o for o in oraciones)]
+
+
+def trae_datos_ajenos(texto: str, pedido: str) -> bool:
+    """True si una pieza del historial tiene beneficios o valores (%, $, fechas) que el pedido
+    no trae: no sirve de ejemplo, porque el redactor copiaba esas promociones."""
+    return bool(beneficios_no_pedidos(texto, pedido)) or any(v not in _valores(pedido) for v in _valores(texto))
 
 
 def controles_de_codigo(texto: str, pedido: str, canal: str) -> tuple[str, list[str], dict]:
@@ -208,15 +258,18 @@ def controles_de_codigo(texto: str, pedido: str, canal: str) -> tuple[str, list[
     - Similitud con la pieza más parecida del historial: si supera UMBRAL_COPIA, es una copia."""
     permitidos = set(_valores(pedido)) | set(_valores(guia_completa()))
     inventados = sorted({v for v in _valores(texto) if v not in permitidos})
-    oraciones = [o.lower() for o in re.split(r"[.!?\n]", texto)]
-    beneficios = [b for b in BENEFICIOS if b not in pedido.lower()
-                  and any(b in o and "[" not in o for o in oraciones)]
+    beneficios = beneficios_no_pedidos(texto, pedido)
+    tuteo = formas_de_tuteo(texto)
+    vigencias = vigencias_no_pedidas(texto, pedido)
     parecida = pieza_mas_parecida(texto)
 
     medidas = [f"- Valores (%, $, fechas, cuotas) que no están en el pedido ni en la guía: "
                f"{', '.join(inventados) if inventados else 'ninguno'}",
                f"- Beneficios que el pedido no trae, mencionados sin marcador [..]: "
                f"{', '.join(beneficios) if beneficios else 'ninguno'}",
+               f"- Formas de tuteo: {', '.join(tuteo) if tuteo else 'ninguna'}",
+               f"- Vigencias sin fecha que el pedido no trae (\"esta semana\"...): "
+               f"{', '.join(vigencias) if vigencias else 'ninguna'}",
                f"- Pieza más parecida del historial: '{parecida['titulo']}' ({parecida['fecha']}, "
                f"{parecida['segmento']}), similitud {parecida['similitud']:.2f} (copia desde {UMBRAL_COPIA})"]
     fallas = []
@@ -233,6 +286,12 @@ def controles_de_codigo(texto: str, pedido: str, canal: str) -> tuple[str, list[
         fallas.append(f"Beneficios inventados (control por código): la pieza menciona "
                       f"{', '.join(beneficios)}, que el pedido no trae. Sacalos (si la guía pide un "
                       f"beneficio para esta situación, su valor va como marcador: [X%]).")
+    if tuteo:
+        fallas.append(f"Tuteo (control por código): {', '.join(tuteo)}. La guía pide voseo rioplatense "
+                      f"(\"tenés\", \"podés\", \"descubrí\", \"elegí\").")
+    if vigencias:
+        fallas.append(f"Vigencia inventada (control por código): {', '.join(vigencias)} no está en el "
+                      f"pedido. Sacala o usá un marcador ([DD/MM]).")
     if parecida["similitud"] >= UMBRAL_COPIA:
         fallas.append(f"Copia del historial (control por código): la pieza es casi igual a "
                       f"'{parecida['titulo']}' ({parecida['fecha']}), similitud {parecida['similitud']:.2f}. "
@@ -250,14 +309,33 @@ def campos_del_brief(brief: str) -> dict[str, str]:
     return {nombre.upper().translate(sin_tilde): valor.strip() for nombre, valor in zip(partes[1::2], partes[2::2])}
 
 
-def brief_para_redactor(brief: str, canal: str, segmento: str) -> str:
+# Campos del brief que describen qué dice la pieza: ahí no puede haber beneficios que el pedido
+# no trae. YA COMUNICADO sí los nombra (es lo que el segmento ya recibió) y no llega al redactor.
+CAMPOS_CONTENIDO = ["DATOS DEL PEDIDO", "OBJETIVO", "ANGULO"]
+
+
+def beneficios_del_brief(brief: str, pedido: str) -> list[str]:
+    campos = campos_del_brief(brief)
+    return beneficios_no_pedidos("\n".join(campos.get(c, "") for c in CAMPOS_CONTENIDO), pedido)
+
+
+def brief_para_redactor(brief: str, canal: str, segmento: str, pedido: str = "") -> str:
     """Solo los campos del brief que el redactor necesita. Se deja afuera YA COMUNICADO (lo que
     el segmento ya recibió): es para el estratega, y en manos del redactor terminaba copiado.
+    Si un campo de contenido todavía trae un beneficio que el pedido no pide (el estratega lo
+    sacó del historial), se reemplaza: si no, el redactor recibe dos órdenes contradictorias
+    (el brief pide cuotas y la revisión las rechaza) y falla en todos los borradores.
     Si el brief no vino con el formato esperado, se pasa entero."""
     campos = campos_del_brief(brief)
     if len(campos) < 4:
         return brief
     campos["CANAL"], campos["SEGMENTO"] = canal, segmento
+    if pedido:
+        reemplazos = {"DATOS DEL PEDIDO": pedido, "OBJETIVO": f"comunicar lo que dice el pedido: {pedido}",
+                      "ANGULO": "elegilo vos, usando solo los DATOS DEL PEDIDO, sin agregar beneficios"}
+        for campo in CAMPOS_CONTENIDO:
+            if campo in campos and beneficios_no_pedidos(campos[campo], pedido):
+                campos[campo] = reemplazos[campo]
     return "\n".join(f"{nombre}: {valor}" for nombre, valor in campos.items() if nombre != "YA COMUNICADO")
 
 
@@ -439,6 +517,20 @@ def nodo_estratega(estado: EstadoMarketing) -> dict:
     if "FUERA DE ALCANCE" in brief.upper():
         return {"fuera_de_alcance": True, "brief": brief, "pasos": [paso]}
 
+    # Control por código del brief: el estratega ve el historial y a veces arrastra un beneficio
+    # de una pieza vieja (p. ej. "cuotas sin interés en Electro" al push de aires). Se le pide
+    # rehacerlo una vez; si insiste, brief_para_redactor reemplaza esos campos.
+    beneficios = beneficios_del_brief(brief, estado["pedido"])
+    if beneficios:
+        correccion = (f"Tu brief agrega {', '.join(beneficios)}, que el pedido no trae (lo sacaste del "
+                      f"historial o lo supusiste). Rehacé el brief completo, con el mismo formato: "
+                      f"DATOS DEL PEDIDO, OBJETIVO y ÁNGULO solo con lo que dice el pedido.")
+        resultado = agente_estratega.invoke({"messages": resultado["messages"] +
+                                             [{"role": "user", "content": correccion}]})
+        brief = limpiar(resultado["messages"][-1].content)
+        paso = {"titulo": "1. Estratega (brief corregido por código)",
+                "contenido": f"{paso['contenido']}\n\n→ Control por código: {correccion}\n\n{brief}"}
+
     segmento = (extraer_campo(brief, "SEGMENTO").split() or ["Todos"])[0].strip(".,")
     segmento = next((s for s in SEGMENTOS if s.lower() == segmento.lower()), "Todos")
     # El canal se valida con código, igual que el segmento: se lleva al nombre exacto del
@@ -466,9 +558,10 @@ def nodo_redactor(estado: EstadoMarketing) -> dict:
                            "plazos de entrega"])
     # Ejemplos del canal que este segmento NO recibió (o solo el esqueleto del formato), para
     # que el redactor no copie un mensaje que el segmento ya tiene
-    ejemplos = ejemplos_de_canal(canal, segmento, excluir_textos=estado.get("textos_copiados"))
+    ejemplos = ejemplos_de_canal(canal, segmento, excluir_textos=estado.get("textos_copiados"),
+                                 descartar=lambda t: trae_datos_ajenos(t, estado["pedido"]))
     entrada = (f"BRIEF (instrucciones internas: no se citan ni se copian en la pieza):\n"
-               f"{brief_para_redactor(estado['brief'], canal, segmento)}\n\n"
+               f"{brief_para_redactor(estado['brief'], canal, segmento, estado['pedido'])}\n\n"
                f"FRAGMENTOS DE LA GUÍA DE MARCA:\n{guia}\n\n"
                f"PIEZAS DE EJEMPLO DEL CANAL {canal.upper()} (solo formato y estilo; no copies sus "
                f"mensajes ni sus datos):\n{ejemplos}")
@@ -503,12 +596,16 @@ def nodo_revisor(estado: EstadoMarketing) -> dict:
                f"PEDIDO ORIGINAL: {estado['pedido']}\n\n"
                f"PIEZA A REVISAR:\nTITULO: {estado['titulo']}\nTEXTO:\n{estado['texto']}\n\n"
                f"MEDIDAS Y CONTROLES DE LA PIEZA (calculados con código, son exactos):\n{medidas}\n{controles}")
-    revision = limpiar(preguntar(agente_revisor, entrada))
-    aprobada, observaciones = leer_revision(revision)
-    # Los controles de código rechazan aunque el revisor apruebe
     if fallas:
+        # El código ya rechazó la pieza: no se llama al revisor LLM (con hasta MAX_BORRADORES
+        # vueltas eran tiempo y tokens de más). El redactor corrige esto primero; el checklist
+        # se revisa cuando la pieza pase los controles de código.
         aprobada = False
-        observaciones = "\n".join(["- " + f for f in fallas] + ([observaciones] if observaciones else []))
+        observaciones = "\n".join("- " + f for f in fallas)
+        revision = "(No se llamó al revisor: la pieza no pasó los controles de código.)"
+    else:
+        revision = limpiar(preguntar(agente_revisor, entrada))
+        aprobada, observaciones = leer_revision(revision)
     copiados = list(estado.get("textos_copiados") or [])
     if parecida["similitud"] >= UMBRAL_COPIA:
         copiados.append(parecida["texto"])
@@ -522,21 +619,26 @@ def nodo_revisor(estado: EstadoMarketing) -> dict:
     }
 
 
-MARCAS = re.compile(r"\b(NO CUMPLE|NO APLICA|CUMPLE)\b")
+MARCAS = re.compile(r"\b(NO\s+CUMPLE|NO\s+APLICA|CUMPLE)\b", flags=re.IGNORECASE)
+# "1.", "1)", "- 1.", "**1.**", "| 1 |", "Punto 1:": el revisor no siempre numera igual
+NUMERO_DE_PUNTO = re.compile(r"(?:punto\s*)?(\d+)\s*[.):|\-–]\s*(.*)", flags=re.IGNORECASE)
 
 
 def leer_checklist(revision: str) -> tuple[dict[int, str], list[str]]:
     """Lee el bloque CHECKLIST: {número de punto: marca} y los renglones marcados NO CUMPLE.
-    Solo cuenta la PRIMERA marca exacta de cada renglón (así "NO CUMPLE" no se lee como CUMPLE)."""
+    Solo cuenta la PRIMERA marca de cada renglón (así "NO CUMPLE" no se lee como CUMPLE). Acepta
+    "Cumple" en minúscula y renglones con viñetas o negritas: rechazar una pieza válida por cómo
+    numeró el revisor era un rechazo espurio."""
     bloque = extraer_campo(revision, "CHECKLIST", ["VEREDICTO"])
     marcas, fallidos = {}, []
     for linea in bloque.splitlines():
-        m = re.match(r"\s*(\d+)\s*[.)]\s*(.*)", linea)
+        m = NUMERO_DE_PUNTO.match(re.sub(r"^[\s\-*•#>|]+", "", linea).replace("**", ""))
         if not m:
             continue
         marca = MARCAS.search(m.group(2))
-        marcas[int(m.group(1))] = marca.group(1) if marca else ""
-        if not marca or marca.group(1) == "NO CUMPLE":
+        valor = re.sub(r"\s+", " ", marca.group(1)).upper() if marca else ""
+        marcas.setdefault(int(m.group(1)), valor)
+        if not marca or valor == "NO CUMPLE":
             fallidos.append(linea.strip())
     return marcas, fallidos
 
@@ -631,7 +733,9 @@ _NO_GUARDAR = (
     + r"|se\s+gu[aá]rd\w*"                                                       # que no se guarde
     + r"|gu[aá]rd\w*(?=\s*(?:[.,;:!?)]|$|nada\b|(?:la|el|esta|esa|este|ese)\s+"
       r"(?:pieza|mensaje|post|publicaci[oó]n|e-?mail|mail|push|texto|borrador)\b))"  # no guardar.
-    + r"|(?:l[oa]s?\s+)?(?:agreg|sum|registr|carg)\w*\s+(?:\w+\s+){0,2}?(?:al|en\s+el)\s+(?:historial|csv)\b"
+    # solo imperativo, subjuntivo o infinitivo ("no la agregues", "no registrar"), no "no registran"
+    + r"|(?:l[oa]s?\s+)?(?:agreg(?:ues|uen|á|ar\w*)|sum(?:es|en|á|ar\w*)|registr(?:es|en|á|ar\w*)"
+      r"|carg(?:ues|uen|á|ar\w*))\s+(?:\w+\s+){0,2}?(?:al|en\s+el)\s+(?:historial|csv)\b"
 )
 GUARDAR_NO = re.compile(rf"\b(?:no|sin|nunca)\s+(?:\w+\s+){{0,3}}?(?:{_NO_GUARDAR})", flags=re.MULTILINE)
 

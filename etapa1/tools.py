@@ -18,7 +18,7 @@ Recordatorios (Clase 4):
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 
 import pandas as pd
 from langchain_core.tools import tool
@@ -114,11 +114,13 @@ def esqueleto_de_pieza(texto: str) -> str:
 
 
 def ejemplos_de_canal(canal: str, segmento: str, excluir_textos: list[str] | None = None,
-                      cantidad: int = 2) -> str:
+                      cantidad: int = 2, descartar: Callable[[str], bool] | None = None) -> str:
     """Piezas aprobadas del mismo canal, como ejemplo de formato y estilo. Para que el redactor
     no copie algo que este segmento ya recibió, se excluyen las piezas enviadas a ese segmento
-    o a 'Todos' (y las que se pasen en excluir_textos). Si no queda ninguna, se devuelve solo
-    el esqueleto del formato de las piezas del canal."""
+    o a 'Todos' (y las que se pasen en excluir_textos). descartar(texto) saca además las piezas
+    que no sirven de ejemplo para este pedido (p. ej. promociones que el pedido no trae: el
+    redactor terminaba copiando sus cuotas). Si no queda ninguna, se devuelve solo el esqueleto
+    del formato de las piezas del canal."""
     df = _leer_contenidos()
     df = df[df["canal"].map(_normalizar) == _normalizar(canal)].sort_values("fecha", ascending=False)
     if df.empty:
@@ -129,6 +131,8 @@ def ejemplos_de_canal(canal: str, segmento: str, excluir_textos: list[str] | Non
         otros = df.iloc[0:0]
     else:
         otros = df[~df["segmento"].map(_normalizar).isin(recibidas) & ~df["texto"].map(_normalizar).isin(excluir)]
+        if descartar is not None:
+            otros = otros[~otros["texto"].astype(str).map(descartar)]
     if not otros.empty:
         return "\n\n".join(f"TITULO: {f.titulo}\nTEXTO: {f.texto}" for f in otros.head(cantidad).itertuples())
     return ("(Solo el formato: las piezas de este canal ya le llegaron a este segmento, así que no se "
