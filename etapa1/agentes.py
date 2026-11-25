@@ -662,6 +662,11 @@ QUÉ CONTROLÁS, PUNTO POR PUNTO:
   pedido es un error, salvo que la guía lo pida para esa situación y sus valores estén como
   marcadores entre corchetes ([DD/MM], [X%]), que son la forma correcta de dejar datos pendientes.
 
+RECUPERACIÓN (sección 8): el pedido no dice qué está haciendo Hornero para mejorar, así que la
+pieza lo deja como marcador, [ACCIÓN DE MEJORA], que completa Marketing. Ese marcador cumple el
+punto de "contar qué estamos haciendo", igual que [X%] cumple el valor del cupón: no la rechaces
+por eso. Sí es un error inventar la causa del problema o una medida concreta que el pedido no trae.
+
 VOSEO (punto 1): las formas de vos llevan la tilde al final ("elegí", "escogé", "tenés", "abrí",
 "descubrí") y son voseo correcto. Marcá NO CUMPLE en el punto 1 solo si citás una palabra en tú
 ("tienes", "elige", "abre", "ti") o en usted.

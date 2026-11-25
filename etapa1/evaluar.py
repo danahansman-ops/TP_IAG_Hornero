@@ -9,7 +9,7 @@ Cómo correrlo (desde esta carpeta, con el venv activado):
     python evaluar.py                      # las 4 consultas de la consigna, 3 corridas cada una
     python evaluar.py --corridas 5 --consultas 3 4
     python evaluar.py --consultas fuera    # el caso límite fuera de alcance
-    python evaluar.py --consultas e1 e2 e3 --corridas 2   # pedidos que no están en la consigna
+    python evaluar.py --consultas e1 e2 e3 --corridas 2   # fuera de la consigna: va a evaluaciones/e1_e2_e3.csv
 
 "Funcionó" quiere decir que la pieza quedó aprobada (por el revisor y por los controles de
 código). Aprobada no es lo mismo que bien escrita: el CSV de salida guarda el texto de cada
@@ -22,6 +22,7 @@ Ojo con el límite diario de tokens de Groq: 4 consultas x 3 corridas consumen b
 
 import argparse
 import re
+import subprocess
 import time
 from pathlib import Path
 
@@ -87,6 +88,16 @@ def ejecutar_con_reintentos(pedido: str, intentos: int = 3) -> dict:
                 raise
             print(f"  (Groq pidió esperar: {espera:.0f} s por el límite de tokens)")
             time.sleep(espera)
+
+
+def version_del_codigo() -> str:
+    """Commit con el que se corre la evaluación ("fd07ffc"; con "+cambios" si hay cambios sin
+    commitear en el código), para que cada fila del CSV diga de qué versión sale."""
+    def git(*args):
+        return subprocess.run(["git", *args], capture_output=True, text=True, cwd=Path(__file__).parent).stdout.strip()
+    commit = git("rev-parse", "--short", "HEAD") or "sin git"
+    cambios = git("status", "--porcelain", "--", "*.py")
+    return commit + ("+cambios" if cambios else "")
 
 
 def funciono(estado: dict, esperado: str) -> bool:
@@ -177,12 +188,22 @@ if __name__ == "__main__":
     parser.add_argument("--corridas", type=int, default=3)
     parser.add_argument("--consultas", nargs="+", default=["1", "2", "3", "4"], choices=list(CONSULTAS))
     parser.add_argument("--espera", type=int, default=ESPERA)
-    parser.add_argument("--salida", default="evaluacion_etapa1.csv",
-                        help="CSV con una fila por corrida (para el informe)")
+    parser.add_argument("--salida", default=None,
+                        help="CSV con una fila por corrida. Por defecto: evaluacion_etapa1.csv si son "
+                             "consultas de la consigna; si no, evaluaciones/<consultas>.csv, para no "
+                             "pisar los resultados de la consigna")
     args = parser.parse_args()
+    if args.salida is None:
+        de_la_consigna = all(c in {"1", "2", "3", "4"} for c in args.consultas)
+        args.salida = ("evaluacion_etapa1.csv" if de_la_consigna
+                       else f"evaluaciones/{'_'.join(args.consultas)}.csv")
+    Path(args.salida).parent.mkdir(parents=True, exist_ok=True)
+    version = version_del_codigo()
+    print(f"Versión del código: {version} · salida: {args.salida}")
 
     filas = []
-    guardar = lambda fila: (filas.append(fila), pd.DataFrame(filas).to_csv(args.salida, index=False))
+    guardar = lambda fila: (filas.append({"Versión": version, **fila}),
+                            pd.DataFrame(filas).to_csv(args.salida, index=False))
     for n, nombre in enumerate(args.consultas):
         pedido, esperado = CONSULTAS[nombre]
         medir(nombre, pedido, esperado, args.corridas, args.espera, al_terminar_corrida=guardar)
