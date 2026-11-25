@@ -9,3 +9,5 @@ __pycache__/
 
 # Índices FAISS: se arman solos en la primera consulta
 indices/
+# Archivos de macOS
+.DS_Store
