@@ -195,7 +195,9 @@ MARCADOR = re.compile(r"\[[^\]\d]*\]")   # [X%], [DD/MM]: datos pendientes, est�
 # valor como marcador en la misma oración ("un cupón de [X%]"): es el caso del beneficio que la
 # guía pide en la recuperación de clientes. Sin marcador ("cuotas sin interés"), son inventados.
 BENEFICIOS = ["cuotas", "descuento", "cupón", "sin cargo", "gratis", "garantía", "reintegro", "bonificación",
-              "financiación", "facilidades de pago", "opciones de pago", "pago flexible", "pagos flexibles"]
+              "financiación", "facilidades de pago", "opciones de pago", "pago flexible", "pagos flexibles",
+              # los que la guía le asigna al segmento Premium: orientan el tono, no son una oferta del pedido
+              "acceso anticipado", "atención preferencial", "beneficios exclusivos"]
 # Similitud coseno a partir de la cual la pieza se considera una copia de una del historial.
 # Calibrado con el historial: entre piezas distintas el máximo es ~0.49; una pieza nueva sobre el
 # mismo tema que otra da ~0.68; una copia casi literal da ~1.0.
@@ -356,8 +358,10 @@ def fallas_de_limites(texto: str, canal: str) -> list[str]:
                 palabras = palabras_de(texto_medido)
                 pista = (f" Tiene {palabras} palabras: dejalo en {max(1, palabras * lim[clave] // valor - 1)} "
                          f"o menos, sacando frases enteras.")
-            fallas.append(f"Largo (control por código, tabla de la guía para {canal}): {que} admite hasta "
-                          f"{lim[clave]} {unidad} y tiene {valor}. Recortá al menos {valor - lim[clave]}.{pista}")
+            tipo = "Emojis" if unidad == "emojis" else "Largo"
+            recorte = "Sacá" if unidad == "emojis" else "Recortá"
+            fallas.append(f"{tipo} (control por código, tabla de la guía para {canal}): {que} admite hasta "
+                          f"{lim[clave]} {unidad} y tiene {valor}. {recorte} al menos {valor - lim[clave]}.{pista}")
     if "hashtags" in lim:
         n, (minimo, maximo) = len(re.findall(r"#\w+", texto)), lim["hashtags"]
         if not minimo <= n <= maximo:
@@ -395,7 +399,8 @@ def trae_datos_ajenos(texto: str, pedido: str) -> bool:
     return bool(beneficios_no_pedidos(texto, pedido)) or any(v not in _valores(pedido) for v in _valores(texto))
 
 
-def controles_de_codigo(texto: str, pedido: str, canal: str, situacion: str = "") -> tuple[str, list[str], dict]:
+def controles_de_codigo(texto: str, pedido: str, canal: str, situacion: str = "",
+                        titulo: str = "") -> tuple[str, list[str], dict]:
     """Devuelve (medidas para el revisor, fallas que rechazan la pieza, pieza más parecida).
     - Formato: si todas las piezas del canal en el historial llevan rótulos de línea ("Título:",
       "Texto:"), la pieza nueva también tiene que llevarlos.
@@ -408,6 +413,7 @@ def controles_de_codigo(texto: str, pedido: str, canal: str, situacion: str = ""
     inventados = sorted({v for v in _valores(texto) if v not in permitidos})
     beneficios = beneficios_no_pedidos(texto, pedido)
     tuteo = formas_de_tuteo(texto)
+    tuteo_titulo = formas_de_tuteo(titulo)   # el título interno también queda en el CSV
     vigencias = vigencias_no_pedidas(texto, pedido)
     internos = terminos_del_brief(texto)
     contactos = contactos_inventados(texto, pedido)
@@ -445,6 +451,9 @@ def controles_de_codigo(texto: str, pedido: str, canal: str, situacion: str = ""
     if tuteo:
         fallas.append(f"Tuteo (control por código): {', '.join(tuteo)}. La guía pide voseo rioplatense "
                       f"(\"tenés\", \"podés\", \"descubrí\", \"elegí\", \"abrí la app\", \"para vos\").")
+    if tuteo_titulo:
+        fallas.append(f"Tuteo en el TITULO interno (control por código): {', '.join(tuteo_titulo)}. "
+                      f"También va en voseo, o sin verbo (\"Descuento en Cocina\").")
     if vigencias:
         fallas.append(f"Vigencia inventada (control por código): {', '.join(vigencias)} no está en el "
                       f"pedido. Sacala o usá un marcador ([DD/MM]).")
@@ -526,9 +535,19 @@ REGLA_NO_INVENTAR = """NO INVENTAR DATOS:
 - Tampoco inventes datos de contacto: emails, teléfonos ni links de otros dominios. Usá
   [CONTACTO] o [LINK], o los links de Hornero que aparecen en los ejemplos.
 - Si la pieza necesita un dato que el pedido no da (por ejemplo la vigencia de un descuento),
-  dejá un marcador entre corchetes para que Marketing lo complete: [DD/MM], [X%], [CÓDIGO].
-- La tabla de canales de la guía describe el llamado del push como "Abre la app": en la pieza
-  va en voseo, "Abrí la app"."""
+  dejá un marcador entre corchetes para que Marketing lo complete: [DD/MM], [X%], [CÓDIGO]."""
+
+# Aclaraciones de la guía que valen para UN canal. Van solo en la entrada del redactor de ese
+# canal: en el prompt general, el email copiaba el link de legales de WhatsApp y el WhatsApp
+# cerraba con "Abrí la app", que es el llamado del push.
+NOTAS_DEL_CANAL = {
+    "WhatsApp": ('Los legales van como link a "Bases y condiciones" (sección 6 de la guía), por ejemplo '
+                 '"Bases y condiciones: hornero.com.ar/legales", no con el texto completo: así entra en '
+                 'los 300 caracteres. El llamado a la acción es un link corto.'),
+    "Push": ('La tabla de la guía describe el llamado como "Abre la app": en la pieza va en voseo, '
+             '"Abrí la app". Los 90 caracteres de la línea "Texto:" incluyen "Abrí la app." y el emoji: '
+             'son unas 14 palabras en total, en oraciones completas.'),
+}
 
 SYSTEM_ESTRATEGA = f"""Sos estratega de contenidos del equipo de Marketing de Hornero, un e-commerce
 argentino de artículos para el hogar y electro que vende por web, app y marketplaces.
@@ -594,8 +613,6 @@ REGLAS:
 - Copiá el FORMATO de las piezas de ejemplo del canal (por ejemplo, si los emails empiezan con
   "Asunto:" o los push tienen líneas "Título:" y "Texto:"), pero no copies sus mensajes, sus
   frases ni sus datos: los porcentajes, fechas y beneficios de un ejemplo NO valen para tu pieza.
-- En WhatsApp, los legales van como link a "Bases y condiciones" (por ejemplo, "Bases y
-  condiciones: hornero.com.ar/legales"), no con el texto completo: así entra en los 300 caracteres.
 - Si recibís observaciones de la revisión, corregí TODAS sin cambiar lo que estaba bien.
 
 {REGLA_NO_INVENTAR}
@@ -758,6 +775,11 @@ def nodo_redactor(estado: EstadoMarketing) -> dict:
                f"FRAGMENTOS DE LA GUÍA DE MARCA:\n{guia}\n\n"
                f"PIEZAS DE EJEMPLO DEL CANAL {canal.upper()} (solo formato y estilo; no copies sus "
                f"mensajes ni sus datos):\n{ejemplos}")
+    fila = fila_del_canal(canal)
+    if fila:   # la regla del canal, completa y desde el primer borrador (los fragmentos del RAG pueden cortarla)
+        entrada += f"\n\nREGLAS DEL CANAL {canal.upper()} (fila de la tabla de la guía): {fila}"
+    if canal in NOTAS_DEL_CANAL:
+        entrada += f"\n{NOTAS_DEL_CANAL[canal]}"
     rotulos = rotulos_del_canal(canal)
     if rotulos:   # sale del historial: todas las piezas del canal usan estas líneas
         lineas = " y ".join(f"'{r}:'" for r in rotulos)
@@ -783,7 +805,8 @@ def nodo_revisor(estado: EstadoMarketing) -> dict:
     # solo la pieza y el pedido: no ve el historial ni el brief.
     medidas = medir_pieza(estado["texto"], estado["canal"])
     situacion = campos_del_brief(estado.get("brief", "")).get("SITUACION", "")
-    controles, fallas, parecida = controles_de_codigo(estado["texto"], estado["pedido"], estado["canal"], situacion)
+    controles, fallas, parecida = controles_de_codigo(estado["texto"], estado["pedido"], estado["canal"], situacion,
+                                                      estado.get("titulo", ""))
     entrada = (f"GUÍA DE MARCA COMPLETA:\n{guia_completa()}\n\n"
                f"========\n"
                f"CANAL: {estado['canal']}\nSEGMENTO: {estado['segmento']}\n"
