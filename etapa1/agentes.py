@@ -127,7 +127,8 @@ def extraer_campo(texto: str, campo: str, siguientes: list[str] | None = None) -
     return m.group(1).strip() if m else ""
 
 
-EMOJI = re.compile("[\U0001F000-\U0001FAFF☀-➿⬀-⯿]")
+# Incluye los números con emoji (1️⃣ = dígito + U+FE0F + U+20E3), que se usan para listas de tips
+EMOJI = re.compile("[0-9#*]\uFE0F?\u20E3|[\U0001F000-\U0001FAFF☀-➿⬀-⯿]")
 ROTULOS = ["Asunto", "Título", "Texto"]
 ROTULO = re.compile(rf"^\s*(?:{'|'.join(ROTULOS)})\s*:\s*", flags=re.IGNORECASE | re.MULTILINE)
 
@@ -249,7 +250,8 @@ def terminos_del_brief(texto: str) -> list[str]:
 def formas_de_tuteo(texto: str) -> list[str]:
     encontradas = [m.group(0) for m in TUTEO_PRESENTE.finditer(texto)]
     for oracion in re.split(r"[.!?¡¿\n]", texto):
-        primera = re.match(r"[^\wáéíóúñ]*([\wáéíóúñ]+)", oracion.strip(), flags=re.IGNORECASE)
+        # se saltean los signos y los números del principio ("1️⃣ Separa", "2. Elige")
+        primera = re.match(r"[\W\d_]*([^\W\d_]+)", oracion.strip())
         if primera and primera.group(1).lower() in TUTEO_IMPERATIVO:
             encontradas.append(primera.group(1))
     return sorted(set(encontradas), key=str.lower)
@@ -546,7 +548,12 @@ NOTA_RECUPERACION = """RECUPERACIÓN DE CLIENTES (sección 8 de la guía):
   pide no dar excusas ni culpar a terceros.
 - Lo que Hornero está haciendo para mejorar va como marcador, [ACCIÓN DE MEJORA], salvo que el
   pedido lo diga. No inventes medidas, servicios ni canales de atención.
-- El beneficio va con su valor como marcador: un cupón de [X%], válido del [DD/MM] al [DD/MM]."""
+- No supongas en qué estado está el pedido (si llegó, si está en camino): el pedido solo dice que
+  hubo un problema con la entrega. El asunto reconoce ese problema.
+- El beneficio se ofrece en el cuerpo, antes del botón, con su valor como marcador: "te dejamos un
+  cupón de [X%] para tu próxima compra". El botón lleva a usarlo y el legal va al pie.
+- La acción de mejora va en una oración del cuerpo con el marcador, por ejemplo: "Para que no
+  vuelva a pasar, estamos [ACCIÓN DE MEJORA]"."""
 
 # Aclaraciones de la guía que valen para UN canal. Van solo en la entrada del redactor de ese
 # canal: en el prompt general, el email copiaba el link de legales de WhatsApp y el WhatsApp
