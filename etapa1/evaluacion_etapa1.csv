@@ -1,8 +1,8 @@
-Consulta,Corrida,Funcionó,Error,Borradores,Llamadas al LLM,Tokens entrada,Tokens salida,Segundos,Motivo,Canal,Segmento,Título,Texto,Observaciones
-1,1,True,False,2,5,11278,946,64.0,,Instagram,Premium,Nuevo aire libre,Descubrí la colección de muebles de exterior que transforma tu patio en un espacio de estilo y comodidad. Son la opción perfecta para disfrutar el aire libre con elegancia. Encontralo en la bio. #HorneroEnCasa #MueblesExteriores #EstiloPremium,
-1,2,True,False,2,5,11278,936,56.4,,Instagram,Premium,Nuevo aire libre,Descubrí la colección de muebles de exterior que transforma tu patio en un espacio de estilo y comodidad. Son la opción perfecta para disfrutar el aire libre con elegancia. Encontralo en la bio. #HorneroEnCasa #MueblesExteriores #EstiloPremium,
-1,3,True,False,1,4,8824,733,22.4,,Instagram,Premium,Nueva colección de muebles de exterior,Descubrí la próxima experiencia exclusiva para clientes Premium: muebles de exterior que transforman tu patio en un oasis de estilo y confort. Acceso anticipado y atención preferencial solo para vos. Encontralo en la app. #HorneroEnCasa #MueblesExteriores #Premium #EstiloExterior,
-2,1,True,False,2,5,11383,2156,74.4,,Email,Recurrentes,Reconocé tu experiencia y te damos una solución,"Asunto: Tu entrega no fue la esperada  
+Versión,Consulta,Corrida,Funcionó,Error,Borradores,Llamadas al LLM,Tokens entrada,Tokens salida,Segundos,Motivo,Canal,Segmento,Título,Texto,Observaciones
+fd30063,1,1,True,False,2,5,11278,946,64.0,,Instagram,Premium,Nuevo aire libre,Descubrí la colección de muebles de exterior que transforma tu patio en un espacio de estilo y comodidad. Son la opción perfecta para disfrutar el aire libre con elegancia. Encontralo en la bio. #HorneroEnCasa #MueblesExteriores #EstiloPremium,
+fd30063,1,2,True,False,2,5,11278,936,56.4,,Instagram,Premium,Nuevo aire libre,Descubrí la colección de muebles de exterior que transforma tu patio en un espacio de estilo y comodidad. Son la opción perfecta para disfrutar el aire libre con elegancia. Encontralo en la bio. #HorneroEnCasa #MueblesExteriores #EstiloPremium,
+fd30063,1,3,True,False,1,4,8824,733,22.4,,Instagram,Premium,Nueva colección de muebles de exterior,Descubrí la próxima experiencia exclusiva para clientes Premium: muebles de exterior que transforman tu patio en un oasis de estilo y confort. Acceso anticipado y atención preferencial solo para vos. Encontralo en la app. #HorneroEnCasa #MueblesExteriores #Premium #EstiloExterior,
+fd30063,2,1,True,False,2,5,11383,2156,74.4,,Email,Recurrentes,Reconocé tu experiencia y te damos una solución,"Asunto: Tu entrega no fue la esperada  
 
 Hola, {nombre}:
 
@@ -22,7 +22,7 @@ Saludos,
 El equipo de Hornero  
 
 Bases y condiciones: hornero.com.ar/legales",
-2,2,True,False,3,7,16834,2284,114.0,,Email,Recurrentes,Reconocé tu experiencia y te acompañamos,"Asunto: Gracias por tu paciencia, te acompañamos  
+fd30063,2,2,True,False,3,7,16834,2284,114.0,,Email,Recurrentes,Reconocé tu experiencia y te acompañamos,"Asunto: Gracias por tu paciencia, te acompañamos  
 Hola, {nombre}:  
 Sabemos que tu entrega no fue la que esperabas.  
 Te agradecemos la paciencia y queremos explicarte brevemente lo que ocurrió.  
@@ -33,7 +33,7 @@ Si necesitás hablar con nuestro equipo de postventa, podés contactarnos direct
 ¡Seguimos a tu lado!  
 [CONTACTO]  
 Legal: Válido del [DD/MM] al [DD/MM] o hasta agotar stock. No acumulable con otras promociones.",
-2,3,True,False,3,7,16927,2291,100.6,,Email,Recurrentes,Reconocé el retraso y te agradecemos tu paciencia,"Asunto: Lamentamos el retraso en tu entrega  
+fd30063,2,3,True,False,3,7,16927,2291,100.6,,Email,Recurrentes,Reconocé el retraso y te agradecemos tu paciencia,"Asunto: Lamentamos el retraso en tu entrega  
 
 Hola, {nombre}:  
 
@@ -51,25 +51,13 @@ El equipo de Hornero
 Válido del [DD/MM] al [DD/MM] o hasta agotar stock. No acumulable con otras promociones.  
 
 Bases y condiciones: hornero.com.ar/legales",
-3,1,True,False,3,7,15830,1756,83.6,,WhatsApp,Nuevos,15% de descuento en cocina,"Hola, {nombre}.  
-Aprovechá el 15% de descuento en todos los productos de cocina.  
-Comprá fácil, pagá cuando quieras y seguí tu pedido en tiempo real desde la app.  
-👉 https://hornero.com.ar/cocina  
+7a9c11b,3,1,True,False,3,7,15862,1751,74.1,,WhatsApp,Nuevos,¡15% en Cocina!,"Hola, {nombre}. ¿Querés renovar tu cocina? En Hornero tenés 15% de descuento en toda la categoría. Variedad de ollas, sartenes y gadgets que hacen tu cocina más práctica. 👉 [LINK]  
 Bases y condiciones: hornero.com.ar/legales",
-3,2,True,False,2,5,10593,957,56.5,,WhatsApp,Nuevos,¡Renueva tu cocina con 15% de descuento!,"Hola, {nombre}.  
-¿Querés renovar tu cocina sin romper el bolsillo?  
-En Hornero tenés un 15% de descuento en toda la sección de cocina.  
-Amplia variedad y podés seguir tu pedido en tiempo real desde la app.  
-Abrí la app y aprovechá.  
-[Bases y condiciones: hornero.com.ar/legales]",
-3,3,True,False,3,7,15842,1788,101.1,,WhatsApp,Nuevos,15% de descuento en cocina,"Hola, {nombre}.  
-Aprovechá el 15% de descuento en todos los productos de cocina.  
-Comprá fácil, pagá cuando quieras y seguí tu pedido en tiempo real desde la app.  
-Descubrí más: hornero.com.ar/cocina  
+7a9c11b,3,2,True,False,3,7,15916,1573,69.7,,WhatsApp,Nuevos,Renová tu cocina con 15% de descuento,"Hola, {nombre}. ¿Querés renovar tu cocina con un 15% de descuento? Descubrí nuestra amplia selección de electrodomésticos y utensilios, y seguí tu pedido en tiempo real desde la app. 👉 [LINK]  
 Bases y condiciones: hornero.com.ar/legales",
-4,1,True,False,2,6,13157,2490,117.0,,Push,Recurrentes,Aires acondicionados en Hornero,"Título: Aires acondicionados en Hornero  
-Texto: Descubrí la nueva selección de aires en app elegí el que mejor se adapte. Abrí app 🚀",
-4,2,False,False,3,6,12190,803,58.3,"Largo (control por código, tabla de la guía para Push): la pieza admite hasta 1 emojis y tiene 3. Recortá al menos 2.",Push,Recurrentes,Variedad de aires en Hornero,"Título: Descubrí aires en Hornero  
-Texto: Tenés opciones de ventana, split y portátiles. 🌬️🛋️💡","- Largo (control por código, tabla de la guía para Push): la pieza admite hasta 1 emojis y tiene 3. Recortá al menos 2."
-4,3,False,False,3,6,12251,1171,30.4,"Largo (control por código, tabla de la guía para Push): la línea 'Texto:' admite hasta 90 caracteres y tiene 97. Recortá",Push,Recurrentes,Aires nuevos en Hornero,"Título: Aires nuevos en Hornero  
-Texto: Descubrí modelos de aire acondicionado y elegí el que mejor se adapte a tu hogar. Abrí la app. 🌬️","- Largo (control por código, tabla de la guía para Push): la línea 'Texto:' admite hasta 90 caracteres y tiene 97. Recortá al menos 7. Tiene 18 palabras: dejalo en 15 o menos, sacando frases enteras."
+7a9c11b,3,3,True,False,1,4,8405,599,21.4,,WhatsApp,Nuevos,Cocina con 15% de descuento,"Hola, {nombre}. ¿Querés renovar tu cocina? Con el 15% de descuento, tenés una gran variedad de estilos y la compra es tan fácil como mandarme un mensaje. 👉 [LINK]  
+Bases y condiciones: hornero.com.ar/legales",
+7a9c11b,4,1,True,False,1,5,0,0,58.4,,Push,Recurrentes,,,Aprobada; el texto no se guardó (error del script de evaluación). Tokens totales del log: 11780
+7a9c11b,4,2,True,False,2,6,0,0,55.9,,Push,Recurrentes,,,Aprobada; el texto no se guardó (error del script de evaluación). Tokens totales del log: 14279
+7a9c11b,4,3,True,False,1,4,8737,708,46.7,,Push,Recurrentes,Amplia gama de aires acondicionados,"Título: Amplia gama de aires acondicionados  
+Texto: Descubrí modelos y precios justos en Hornero. Abrí la app. 🌬️",
