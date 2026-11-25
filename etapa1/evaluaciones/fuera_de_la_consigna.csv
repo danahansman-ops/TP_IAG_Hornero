@@ -1,0 +1,52 @@
+Versión,Consulta,Corrida,Funcionó,Error,Borradores,Llamadas al LLM,Tokens entrada,Tokens salida,Segundos,Motivo,Canal,Segmento,Título,Texto,Observaciones
+4567b9f,e1,1,True,False,1,4,8833,955,62.4,,LinkedIn,Recurrentes,Lanzamiento centro de distribución Neuquén,"¡Buenas noticias para nuestros clientes de Neuquén y alrededores!  
+Hornero abre un nuevo centro de distribución en la ciudad, lo que significa que tus pedidos llegarán más rápido y con mayor disponibilidad de stock.  
+Con esta expansión, mejoramos la cobertura logística y la eficiencia de nuestros procesos, garantizándote un servicio más cercano y confiable.  
+Si tenés alguna duda o querés saber cómo afecta esto a tu compra, contáctanos a través de nuestro chat en la app o enviá un mensaje a [CONTACTO].  
+¡Seguimos creciendo para servirte mejor!  
+#LogísticaHornero #Neuquén #ServicioAlCliente",
+4567b9f,e1,2,True,False,3,8,19647,2259,112.7,,LinkedIn,Todos,Nuevo centro de distribución en Neuquén,"Hornero abre un nuevo centro de distribución en Neuquén, ampliando la cobertura logística y la disponibilidad de productos en la región. Con esta infraestructura, la trazabilidad de cada pedido mejora y el seguimiento se vuelve más sencillo. Nuestro objetivo es seguir brindándote la misma calidad y variedad que esperás, pero con una logística más eficiente. Visita nuestro sitio para conocer más.  
+#LogísticaHornero #Neuquén #EcommerceArgentina",
+4567b9f,e2,1,True,False,2,6,14387,1433,73.0,,Email,Premium,Envío sin cargo en Living hasta el 15/12,"Asunto: Envío sin cargo en Living 🎉  
+
+Hola, {nombre}:  
+
+¿Querés renovar tu living sin pagar envío? Hasta el 15/12, todas las compras de la categoría Living te llegan sin cargo.  
+
+[Botón: Descubrí la colección]  
+
+Envío sin cargo en compras superiores a [X]. Consultá zonas.",
+4567b9f,e2,2,True,False,1,4,8763,784,43.6,,Email,Premium,Envío sin cargo en Living hasta 15/12,"Asunto: Envío sin cargo en Living hasta el 15/12 🚚  
+
+Hola, {nombre}:  
+
+¿Querés renovar tu living sin preocuparte por el envío?  
+Con tu estatus Premium, tenés envío sin cargo en todas las compras de la categoría Living hasta el 15/12.  
+
+[Botón: Descubrí la colección]  
+
+Enhorabuena por ser parte de la familia Hornero.  
+
+---  
+Envío sin cargo en compras superiores a $X. Consultá zonas.  
+
+---",
+4567b9f,e3,1,True,False,1,4,9044,876,58.3,,Instagram,Todos,Guía rápida para ordenar tu placard,"1️⃣ Separa por temporada: guardá la ropa de verano en la parte alta y la de invierno en la inferior.  
+2️⃣ Agrupá por tipo: camisetas, pantalones, blusas.  
+3️⃣ Usá cajas o cestas para accesorios: cinturones, bufandas y joyería.  
+4️⃣ Aprovechá los estantes ajustables y los ganchos para colgar chaquetas.  
+5️⃣ Mirá nuestra selección de organizadores y estanterías en Hornero y elegí el que más te guste.  
+
+Con Hornero, podés comprar todo en un solo clic y recibirlo en tu casa.  
+Link en la bio  
+#HorneroEnCasa #OrganizaTuVida #TipsDeHogar #EstiloConPracticidad",
+4567b9f,e3,2,True,False,2,5,11413,1006,38.7,,Instagram,Todos,5 ideas para maximizar tu placard,"1️⃣ Usá estantes ajustables: cambiá la altura según la ropa.  
+2️⃣ Añade ganchos en la puerta: blusas, cinturones y accesorios.  
+3️⃣ Colocá cestas colgantes: guardá zapatos o prendas de temporada.  
+4️⃣ Aprovechá los cajones con separadores: mantén la ropa doblada ordenada.  
+5️⃣ Iluminá el interior con una lámpara LED: ves todo sin mover nada.  
+
+Descubrí los accesorios que necesitás en Hornero y pon tu placard al 100%.  
+Link en la bio  
+
+#HorneroEnCasa #Organización #TipsDeHogar #EstiloDeVida #CasaConEstilo",

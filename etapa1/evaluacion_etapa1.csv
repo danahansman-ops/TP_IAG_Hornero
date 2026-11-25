@@ -1,63 +1,48 @@
 Versión,Consulta,Corrida,Funcionó,Error,Borradores,Llamadas al LLM,Tokens entrada,Tokens salida,Segundos,Motivo,Canal,Segmento,Título,Texto,Observaciones
-fd30063,1,1,True,False,2,5,11278,946,64.0,,Instagram,Premium,Nuevo aire libre,Descubrí la colección de muebles de exterior que transforma tu patio en un espacio de estilo y comodidad. Son la opción perfecta para disfrutar el aire libre con elegancia. Encontralo en la bio. #HorneroEnCasa #MueblesExteriores #EstiloPremium,
-fd30063,1,2,True,False,2,5,11278,936,56.4,,Instagram,Premium,Nuevo aire libre,Descubrí la colección de muebles de exterior que transforma tu patio en un espacio de estilo y comodidad. Son la opción perfecta para disfrutar el aire libre con elegancia. Encontralo en la bio. #HorneroEnCasa #MueblesExteriores #EstiloPremium,
-fd30063,1,3,True,False,1,4,8824,733,22.4,,Instagram,Premium,Nueva colección de muebles de exterior,Descubrí la próxima experiencia exclusiva para clientes Premium: muebles de exterior que transforman tu patio en un oasis de estilo y confort. Acceso anticipado y atención preferencial solo para vos. Encontralo en la app. #HorneroEnCasa #MueblesExteriores #Premium #EstiloExterior,
-fd30063,2,1,True,False,2,5,11383,2156,74.4,,Email,Recurrentes,Reconocé tu experiencia y te damos una solución,"Asunto: Tu entrega no fue la esperada  
+4567b9f,1,1,True,False,2,6,13436,1094,60.1,,Instagram,Premium,Lanzamiento: Muebles de exterior Premium,Descubrí la nueva colección de muebles de exterior pensada solo para vos. Diseños exclusivos que transforman cualquier patio o terraza en un espacio de lujo y confort. Elegí tu pieza y dale vida al aire libre. Link en la bio. #HorneroEnCasa #MueblesExteriores #Premium #DiseñoExterior,
+4567b9f,1,2,True,False,1,5,10924,908,58.9,,Instagram,Premium,Lanzamiento: Muebles de exterior Premium,"Descubrí la nueva colección de muebles de exterior pensada solo para vos, cliente Premium. Diseñados para que tu patio, terraza o balcón se conviertan en un espacio de lujo y confort. Sé el primero en elegirlos y dale a tu hogar el toque exclusivo que merece. Link en la bio. #HorneroEnCasa #MueblesExteriores #Premium",
+4567b9f,1,3,True,False,1,5,10919,900,58.9,,Instagram,Premium,Lanzamiento: Muebles de exterior Premium,"Descubrí la nueva colección de muebles de exterior pensada solo para vos, cliente Premium. Diseñados para que tu patio, terraza o jardín sea el lugar más exclusivo de la casa. Sé el primero en elegirlos y dale vida a tus espacios al aire libre. Link en la bio. #HorneroEnCasa #MueblesExteriores #Premium",
+4567b9f,2,1,True,False,2,6,14767,1583,110.2,,Email,Recurrentes,Recuperación entrega Hornero,"Asunto: 🚚 Tu pedido está en camino, {nombre}  
 
-Hola, {nombre}:
-
-Sabemos que tu última entrega no fue la que esperabas. No es lo que queremos para vos.
-
-En Hornero estamos cambiando la forma de enviar tus pedidos. Ahora tenés un sistema de seguimiento en tiempo real y un transportista dedicado para tu próximo envío. Así podés saber exactamente dónde está tu paquete y cuándo llegará.
-
-Para que vuelvas a confiar en nosotros, te regalamos un cupón de [X%] de descuento en tu próxima compra. Usá el código: [CÓDIGO] al pagar.
-
-[Botón: Usá tu cupón]
-
-Si tenés alguna duda o necesitás ayuda, escribí a [CONTACTO] o visitá nuestro centro de ayuda en [LINK].
-
-¡Gracias por seguir con nosotros!
-
-Saludos,  
-El equipo de Hornero  
-
-Bases y condiciones: hornero.com.ar/legales",
-fd30063,2,2,True,False,3,7,16834,2284,114.0,,Email,Recurrentes,Reconocé tu experiencia y te acompañamos,"Asunto: Gracias por tu paciencia, te acompañamos  
 Hola, {nombre}:  
-Sabemos que tu entrega no fue la que esperabas.  
-Te agradecemos la paciencia y queremos explicarte brevemente lo que ocurrió.  
-El envío se vio afectado por una demora en la logística del interior, y estamos trabajando para evitar que vuelva a pasar.  
-Para compensarte, te regalás un cupón del [X%] en tu próxima compra. Válido del [DD/MM] al [DD/MM]. No acumulable con otras promociones.  
-Si necesitás hablar con nuestro equipo de postventa, podés contactarnos directamente o abrir un ticket en la app.  
+
+Sabemos que tu experiencia no fue la que esperabas y te agradecemos la paciencia.  
+
+Estamos haciendo todo lo posible para que tu pedido llegue pronto y te mantendremos informado.  
+
 [Botón: Contactar al equipo]  
-¡Seguimos a tu lado!  
-[CONTACTO]  
-Legal: Válido del [DD/MM] al [DD/MM] o hasta agotar stock. No acumulable con otras promociones.",
-fd30063,2,3,True,False,3,7,16927,2291,100.6,,Email,Recurrentes,Reconocé el retraso y te agradecemos tu paciencia,"Asunto: Lamentamos el retraso en tu entrega  
+
+[Legal: Cupón de [X%] válido del [DD/MM] al [DD/MM]. No acumulable con otras promociones.]",
+4567b9f,2,2,True,False,3,7,17201,1733,107.6,,Email,Recurrentes,Recuperación entrega Hornero,"Asunto: 🚚 Tu pedido está en camino, {nombre}  
 
 Hola, {nombre}:  
 
-Sabemos que tu experiencia no fue la que esperabas y te agradecemos la paciencia que mostraste. El retraso se debió a un problema técnico en nuestro sistema de logística, y ya lo solucionamos para que no vuelva a pasar.  
+Sabemos que tu experiencia no fue la que esperabas y te agradecemos la paciencia.  
 
-Para demostrarte que estamos comprometidos con tu satisfacción, te ofrecemos un cupón de descuento del [X%] en tu próxima compra.  
+Estamos trabajando para que tu pedido llegue en la fecha estimada que te mostraremos al pagar y te mantendremos informado.  
 
-[Botón: Usá tu cupón]  
+[Botón: Contactar al equipo]  
 
-Si tenés alguna duda o necesitás ayuda, escribí a nuestro chat o contactá a [CONTACTO].  
+[Legal: Cupón de [X%] válido del [DD/MM] al [DD/MM]. No acumulable con otras promociones.]",
+4567b9f,2,3,True,False,2,5,11449,1057,47.0,,Email,Recurrentes,Recuperación entrega Hornero,"Asunto: 🚚 Tu pedido está en camino, {nombre}  
 
-Saludos,  
-El equipo de Hornero  
+Hola, {nombre}:  
 
-Válido del [DD/MM] al [DD/MM] o hasta agotar stock. No acumulable con otras promociones.  
+Sabemos que tu experiencia no fue la que esperabas y te agradecemos la paciencia.  
 
+Para compensarte, te regalamos un cupón del [X%] que podés usar en tu próxima compra.  
+
+[Botón: Usar cupón]  
+
+[Legal: Válido del [DD/MM] al [DD/MM] o hasta agotar stock. No acumulable con otras promociones.]",
+4567b9f,3,1,True,False,1,4,8561,725,67.3,,WhatsApp,Nuevos,Promoción Cocina 15%,"Hola, {nombre}. ¿Querés renovar tu cocina? En Hornero tenés 15% de descuento en toda la categoría Cocina. Variedad de utensilios, electrodomésticos y accesorios, todo a tu alcance. Aprovechá y comprá con facilidad. 👉 [LINK]  
 Bases y condiciones: hornero.com.ar/legales",
-7a9c11b,3,1,True,False,3,7,15862,1751,74.1,,WhatsApp,Nuevos,¡15% en Cocina!,"Hola, {nombre}. ¿Querés renovar tu cocina? En Hornero tenés 15% de descuento en toda la categoría. Variedad de ollas, sartenes y gadgets que hacen tu cocina más práctica. 👉 [LINK]  
+4567b9f,3,2,True,False,1,4,8580,653,6.4,,WhatsApp,Nuevos,Cocina con 15% de descuento,"Hola, {nombre}. ¿Querés renovar tu cocina? Enhorabuena, tenés un 15% de descuento en todos los artículos de cocina. Además, podés seguir tu pedido en tiempo real desde la app. ¡No esperes más! 👉 [LINK]  
 Bases y condiciones: hornero.com.ar/legales",
-7a9c11b,3,2,True,False,3,7,15916,1573,69.7,,WhatsApp,Nuevos,Renová tu cocina con 15% de descuento,"Hola, {nombre}. ¿Querés renovar tu cocina con un 15% de descuento? Descubrí nuestra amplia selección de electrodomésticos y utensilios, y seguí tu pedido en tiempo real desde la app. 👉 [LINK]  
-Bases y condiciones: hornero.com.ar/legales",
-7a9c11b,3,3,True,False,1,4,8405,599,21.4,,WhatsApp,Nuevos,Cocina con 15% de descuento,"Hola, {nombre}. ¿Querés renovar tu cocina? Con el 15% de descuento, tenés una gran variedad de estilos y la compra es tan fácil como mandarme un mensaje. 👉 [LINK]  
-Bases y condiciones: hornero.com.ar/legales",
-7a9c11b,4,1,True,False,1,5,0,0,58.4,,Push,Recurrentes,,,Aprobada; el texto no se guardó (error del script de evaluación). Tokens totales del log: 11780
-7a9c11b,4,2,True,False,2,6,0,0,55.9,,Push,Recurrentes,,,Aprobada; el texto no se guardó (error del script de evaluación). Tokens totales del log: 14279
-7a9c11b,4,3,True,False,1,4,8737,708,46.7,,Push,Recurrentes,Amplia gama de aires acondicionados,"Título: Amplia gama de aires acondicionados  
+4567b9f,3,3,True,False,3,6,12814,923,65.3,,WhatsApp,Nuevos,15% en Cocina,"Hola, {nombre}. ¡Tenés un 15% de descuento en toda la sección de cocina! Elegí estufas, lavavajillas y accesorios, pagá con tu tarjeta y seguí tu pedido en tiempo real. Bases y condiciones: hornero.com.ar/legales 👉 [LINK]",
+4567b9f,4,1,True,False,2,6,13187,1006,75.0,,Push,Recurrentes,Variedad de aires,"Título: Variedad de aires  
+Texto: Tenemos aires acondicionados de todo tipo para tu hogar. Abrí la app. 🌬️",
+4567b9f,4,2,True,False,1,4,8865,690,41.6,,Push,Recurrentes,Amplia gama de aires acondicionados,"Título: Amplia gama de aires acondicionados  
 Texto: Descubrí modelos y precios justos en Hornero. Abrí la app. 🌬️",
+4567b9f,4,3,True,False,1,5,11067,843,38.1,,Push,Recurrentes,Variedad de aires para tu espacio,"Título: Variedad de aires para tu espacio  
+Texto: Descubrí el aire que se adapta a tu sala, oficina o dormitorio. Abrí la app. 🌬️",
