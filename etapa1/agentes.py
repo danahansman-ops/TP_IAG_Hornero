@@ -189,7 +189,8 @@ def medir_pieza(texto: str, canal: str = "") -> str:
 # Valores concretos: porcentajes, montos, fechas DD/MM y cantidad de cuotas
 VALORES = re.compile(r"\d+(?:[.,]\d+)?\s*%|\$\s*\d[\d.,]*|\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b|\b\d+\s+cuotas\b",
                      flags=re.IGNORECASE)
-MARCADOR = re.compile(r"\[[^\]]*\]")   # [X%], [DD/MM]: datos pendientes, están permitidos
+MARCADOR = re.compile(r"\[[^\]\d]*\]")   # [X%], [DD/MM]: datos pendientes, están permitidos
+# (sin dígitos: "[Cupón: 10% del 01/12 al 31/12]" no es un marcador, son datos inventados entre corchetes)
 # Beneficios (cuotas, descuento, cupón...). Si el pedido no los trae, solo pueden aparecer con su
 # valor como marcador en la misma oración ("un cupón de [X%]"): es el caso del beneficio que la
 # guía pide en la recuperación de clientes. Sin marcador ("cuotas sin interés"), son inventados.
@@ -220,7 +221,7 @@ TUTEO_IMPERATIVO = {"descubre", "elige", "aprovecha", "disfruta", "renueva", "mi
                     # de canales para describir el push, pero en la pieza va "Abrí la app")
                     "abre", "toca", "descarga", "escribe", "pulsa", "accede", "aprende", "únete",
                     "suscríbete", "regístrate", "cuéntanos", "escríbenos", "llámanos", "contáctanos",
-                    "déjanos"}
+                    "déjanos", "mantén", "obtén", "explora", "consigue", "llévate", "olvídate"}
 # Vigencias que dan un plazo sin fecha ("esta semana", "por tiempo limitado"): en una promoción,
 # si el pedido no las trae, son un dato inventado igual que una fecha y van como marcador
 # [DD/MM]. Solo se controlan si la pieza tiene un beneficio o un %: en un post de tips, "este
@@ -281,8 +282,8 @@ DOMINIO = re.compile(r"\b((?:[a-z0-9-]+\.)+(?:com|net|org)(?:\.ar)?)\b")
 # (materiales, terminaciones, durabilidad...). El revisor las aprobaba: "materiales resistentes",
 # "diseñados para el clima argentino", "personalizá cada pieza".
 CARACTERISTICAS = re.compile(
-    r"\b(?:resistent\w*|resisten\b|impermeable\w*|durader\w*|artesanal\w*|materiales?\b|acabados?\b|"
-    r"terminaciones?\b|personaliz\w*|a\s+medida\b(?!\s+que)|dise[ñn]ad[oa]s?\s+para\s+el\s+clima)",
+    r"\b(?:resist\w*|impermeable\w*|durader\w*|artesanal\w*|materiales?\b|acabados?\b|"
+    r"terminaciones?\b|(?<!seguimiento )(?<!atención )(?<!atencion )personaliz\w*|a\s+medida\b(?!\s+que)|dise[ñn]ad[oa]s?\s+para\s+el\s+clima)",
     flags=re.IGNORECASE)
 
 
@@ -343,8 +344,15 @@ def fallas_de_limites(texto: str, canal: str) -> list[str]:
             medidas.append(("palabras_cuerpo", "el cuerpo del email", palabras_de(cuerpo), "palabras"))
     for clave, que, valor, unidad in medidas:
         if clave in lim and valor > lim[clave]:
+            pista = ""
+            if unidad == "caracteres":   # los LLM cuentan mal caracteres; palabras, mejor
+                texto_medido = {"titulo": linea("Título"), "texto": linea("Texto"),
+                                "asunto": linea("Asunto")}.get(clave) or ROTULO.sub("", texto)
+                palabras = palabras_de(texto_medido)
+                pista = (f" Tiene {palabras} palabras: dejalo en {max(1, palabras * lim[clave] // valor - 1)} "
+                         f"o menos, sacando frases enteras.")
             fallas.append(f"Largo (control por código, tabla de la guía para {canal}): {que} admite hasta "
-                          f"{lim[clave]} {unidad} y tiene {valor}. Recortá al menos {valor - lim[clave]}.")
+                          f"{lim[clave]} {unidad} y tiene {valor}. Recortá al menos {valor - lim[clave]}.{pista}")
     if "hashtags" in lim:
         n, (minimo, maximo) = len(re.findall(r"#\w+", texto)), lim["hashtags"]
         if not minimo <= n <= maximo:
@@ -354,6 +362,26 @@ def fallas_de_limites(texto: str, canal: str) -> list[str]:
     if obligatorio and obligatorio.lower() not in texto.lower():
         fallas.append(f"Hashtags (control por código, tabla de la guía para {canal}): falta {obligatorio}.")
     return fallas
+
+
+# Legales escritos completos ("Válido del DD/MM...", "No acumulable..."). La guía (sección 6) los
+# pide así en email e Instagram, pero en WhatsApp van como link a "Bases y condiciones": escritos
+# completos, el mensaje no entra en los 300 caracteres (WhatsApp fallaba 3 borradores por eso).
+LEGAL_LARGO = re.compile(r"no\s+acumulable|agotar\s+stock|v[aá]lido\s+del\b", flags=re.IGNORECASE)
+
+
+def frases_compartidas(texto: str, otro: str, n: int = 5) -> list[str]:
+    """Oraciones de la pieza que comparten n palabras seguidas con otra pieza: le dicen al
+    redactor qué reescribir cuando la pieza es una copia (antes solo sabía "es casi igual")."""
+    palabras = lambda t: re.findall(r"\w+", t.lower())
+    otras = palabras(otro)
+    ngramas = {tuple(otras[i:i + n]) for i in range(len(otras) - n + 1)}
+    copiadas = []
+    for oracion in re.split(r"(?<=[.!?])\s+|\n", texto):
+        w = palabras(oracion)
+        if any(tuple(w[i:i + n]) in ngramas for i in range(len(w) - n + 1)):
+            copiadas.append(oracion.strip())
+    return copiadas
 
 
 def trae_datos_ajenos(texto: str, pedido: str) -> bool:
@@ -425,13 +453,19 @@ def controles_de_codigo(texto: str, pedido: str, canal: str, situacion: str = ""
     if "recuperaci" in situacion.lower() and not any(b in texto.lower() for b in BENEFICIOS):
         fallas.append("Recuperación de clientes (control por código, sección 8 de la guía): falta ofrecer un "
                       "beneficio concreto con legales, por ejemplo un cupón de [X%] con su vigencia [DD/MM].")
+    if canal == "WhatsApp" and LEGAL_LARGO.search(texto):
+        fallas.append("Legales (control por código, sección 6 de la guía): en WhatsApp los legales van como "
+                      "link a \"Bases y condiciones\" (por ejemplo, 'Bases y condiciones: hornero.com.ar/legales'), "
+                      "no con el texto completo (\"Válido del...\", \"No acumulable...\").")
     if internos:
         fallas.append(f"Brief filtrado (control por código): la pieza dice {', '.join(internos)}, que son "
                       f"instrucciones internas. Escribí el texto para el cliente, sin nombrarlas.")
     if parecida["similitud"] >= UMBRAL_COPIA:
         fallas.append(f"Copia del historial (control por código): la pieza es casi igual a "
                       f"'{parecida['titulo']}' ({parecida['fecha']}), similitud {parecida['similitud']:.2f}. "
-                      f"Escribí un mensaje nuevo, con otras frases.")
+                      f"Escribí un mensaje nuevo, con otras frases."
+                      + (f" Frases copiadas: {'; '.join(repr(f) for f in frases_compartidas(texto, parecida['texto']))}."
+                         if frases_compartidas(texto, parecida["texto"]) else ""))
     return "\n".join(medidas), fallas, parecida
 
 
@@ -555,6 +589,8 @@ REGLAS:
 - Copiá el FORMATO de las piezas de ejemplo del canal (por ejemplo, si los emails empiezan con
   "Asunto:" o los push tienen líneas "Título:" y "Texto:"), pero no copies sus mensajes, sus
   frases ni sus datos: los porcentajes, fechas y beneficios de un ejemplo NO valen para tu pieza.
+- En WhatsApp, los legales van como link a "Bases y condiciones" (por ejemplo, "Bases y
+  condiciones: hornero.com.ar/legales"), no con el texto completo: así entra en los 300 caracteres.
 - Si recibís observaciones de la revisión, corregí TODAS sin cambiar lo que estaba bien.
 
 {REGLA_NO_INVENTAR}
