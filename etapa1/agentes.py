@@ -301,12 +301,17 @@ def caracteristicas_inventadas(texto: str, pedido: str) -> list[str]:
                    if m.group(0).lower() not in pedido.lower()})
 
 
+def fila_del_canal(canal: str) -> str | None:
+    """La fila de la tabla "Reglas por canal" de la guía para ese canal, tal como está en el PDF."""
+    return next((l.strip() for l in guia_completa().splitlines() if l.strip().startswith("- Canal:")
+                 and normalizar_canal(l.split("|")[0].split(":", 1)[1]) == canal), None)
+
+
 def limites_del_canal(canal: str) -> dict:
     """Límites del canal leídos de la tabla "Reglas por canal" de la guía (no escritos a mano):
     caracteres, título y texto (push), asunto y palabras del cuerpo (email), emojis y hashtags.
     Si la guía no tiene la fila o no se entiende, devuelve {} y no se controla nada."""
-    fila = next((l for l in guia_completa().splitlines() if l.strip().startswith("- Canal:")
-                 and normalizar_canal(l.split("|")[0].split(":", 1)[1]) == canal), None)
+    fila = fila_del_canal(canal)
     if fila is None:
         return {}
     celdas = {c.split(":", 1)[0].strip().lower(): c.split(":", 1)[1].strip()
@@ -629,6 +634,14 @@ VOSEO (punto 1): las formas de vos llevan la tilde al final ("elegí", "escogé"
 "descubrí") y son voseo correcto. Marcá NO CUMPLE en el punto 1 solo si citás una palabra en tú
 ("tienes", "elige", "abre", "ti") o en usted.
 
+CANAL: aplicá solo la fila de la tabla de reglas por canal que corresponde al canal de la pieza
+(te la pasamos aparte). Las reglas de otros canales no aplican: por ejemplo, #HorneroEnCasa es
+de Instagram y un push o un WhatsApp no lleva hashtags. Si la pieza llegó a vos, el código ya
+comprobó contra esa fila el largo, los emojis y los hashtags, y cumplen.
+
+LEGALES (sección 6): en WhatsApp los legales van como link a "Bases y condiciones"; un link así
+cumple el punto de legales, aunque no esté el texto completo.
+
 Cada punto lleva exactamente una de estas marcas: CUMPLE, NO CUMPLE o NO APLICA (NO APLICA solo
 si el punto es condicional y no corresponde, por ejemplo legales cuando no hay promoción).
 APROBADA solo si ningún punto es NO CUMPLE. Si la pieza cumple, aprobala aunque se pudiera
@@ -774,6 +787,7 @@ def nodo_revisor(estado: EstadoMarketing) -> dict:
     entrada = (f"GUÍA DE MARCA COMPLETA:\n{guia_completa()}\n\n"
                f"========\n"
                f"CANAL: {estado['canal']}\nSEGMENTO: {estado['segmento']}\n"
+               f"REGLAS DE ESTE CANAL (fila de la tabla de la guía): {fila_del_canal(estado['canal']) or 'no está en la tabla'}\n"
                f"PEDIDO ORIGINAL: {estado['pedido']}\n\n"
                f"PIEZA A REVISAR:\nTITULO: {estado['titulo']}\nTEXTO:\n{estado['texto']}\n\n"
                f"MEDIDAS Y CONTROLES DE LA PIEZA (calculados con código, son exactos):\n{medidas}\n{controles}")
