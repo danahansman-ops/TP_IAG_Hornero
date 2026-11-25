@@ -1,0 +1,39 @@
+Versión,Consulta,Corrida,Funcionó,Error,Borradores,Llamadas al LLM,Tokens entrada,Tokens salida,Segundos,Motivo,Canal,Segmento,Título,Texto,Observaciones
+9275f86,1,1,True,False,1,5,10924,909,39.1,,Instagram,Premium,Lanzamiento: Muebles de exterior Premium,"Descubrí la nueva colección de muebles de exterior pensada solo para vos, cliente Premium. Diseñados para que tu patio, terraza o balcón se conviertan en un espacio de lujo y confort. Sé el primero en elegirlos y dale a tu hogar el toque exclusivo que merece. Link en la bio. #HorneroEnCasa #MueblesExteriores #Premium",
+9275f86,1,2,True,False,1,5,10929,911,47.0,,Instagram,Premium,Lanzamiento: Muebles de exterior Premium,"Descubrí la nueva colección de muebles de exterior pensada solo para vos, cliente Premium. Diseñados para transformar cualquier patio o terraza en un espacio de lujo y confort. Sé el primero en elegirlos y dale a tu hogar el toque exclusivo que merece. Link en la bio. #HorneroEnCasa #MueblesExteriores #Premium",
+9275f86,1,3,True,False,1,4,8930,706,31.0,,Instagram,Premium,Lanzamiento: Muebles de exterior premium,"Descubrí la nueva colección de muebles de exterior. Diseñados para que tu patio sea un espacio de estilo y comodidad. Cada pieza combina forma y funcionalidad, perfecta para disfrutar el aire libre con elegancia. Link en la bio. #HorneroEnCasa #MueblesExteriores #EstiloAlAireLibre #Premium #DiseñoExterior",
+9275f86,2,1,True,False,2,6,15051,1641,116.4,,Email,Recurrentes,Recuperación entrega con problema,"Asunto: 🚚 Tu pedido tuvo un inconveniente  
+Hola, {nombre}:  
+Sabemos que vos no recibiste tu pedido como esperabas y agradecemos tu paciencia.  
+Para que no vuelva a pasar, estamos [ACCIÓN DE MEJORA].  
+Te dejamos un cupón de [X%] para tu próxima compra.  
+[Botón: Usá tu cupón]  
+[Legal: Válido del DD/MM al DD/MM o hasta agotar stock. No acumulable con otras promociones.]",
+9275f86,2,2,True,False,1,4,9150,849,45.2,,Email,Recurrentes,Recuperación entrega con problema,"Asunto: 🚚 Tu pedido tuvo un inconveniente  
+Hola, {nombre}:  
+Sabemos que tu experiencia no fue la que esperabas y te agradecemos la paciencia.  
+Para que no vuelva a pasar, estamos [ACCIÓN DE MEJORA].  
+Te dejamos un cupón de [X%] para tu próxima compra.  
+[Botón: Usá tu cupón]  
+[Legal: Válido del DD/MM al DD/MM o hasta agotar stock. No acumulable con otras promociones.]",
+9275f86,2,3,True,False,1,4,9146,887,30.6,,Email,Recurrentes,Recuperación entrega con problema,"Asunto: 🚚 Tu pedido tuvo un inconveniente  
+Hola, {nombre}:  
+Sabemos que tu entrega no fue la esperada. Para que no vuelva a pasar, estamos [ACCIÓN DE MEJORA].  
+Te dejamos un cupón de [X%] para tu próxima compra.  
+[Botón: Usá tu cupón]  
+Legal: Válido del DD/MM al DD/MM o hasta agotar stock. No acumulable con otras promociones.",
+9275f86,3,1,True,False,1,4,8549,724,68.1,,WhatsApp,Nuevos,Promoción Cocina 15%,"Hola, {nombre}. ¿Listo para renovar tu cocina? Con el 15% de descuento en toda la categoría, tenés variedad y calidad al alcance. Aprovechá y comprá con facilidad. 👉 [LINK]  
+Bases y condiciones: hornero.com.ar/legales",
+9275f86,3,2,True,False,3,6,12814,855,51.8,,WhatsApp,Nuevos,15% en Cocina,"Hola, {nombre}. ¡Tenés un 15% de descuento en toda la sección de cocina! Elegí estufas, lavavajillas y accesorios, pagá con tu tarjeta y seguí tu pedido en tiempo real. Bases y condiciones: hornero.com.ar/legales 👉 [LINK]",
+9275f86,3,3,True,False,1,4,8540,616,25.1,,WhatsApp,Nuevos,Promo Cocina 15%,"Hola, {nombre}.  
+¡15% de descuento en toda la línea de cocinas!  
+Elegí entre estilos modernos, clásicos y funcionales.  
+Compra fácil, pagá con tu tarjeta y seguí tu pedido en tiempo real.  
+Bases y condiciones: hornero.com.ar/legales  
+👉 [LINK]",
+9275f86,4,1,True,False,1,5,11061,849,42.0,,Push,Recurrentes,Aire acondicionado para cada espacio,"Título: Aire acondicionado para cada espacio  
+Texto: Descubrí el modelo que se adapta a tu sala, dormitorio o oficina. Abrí la app. 🌬️",
+9275f86,4,2,True,False,1,5,11067,826,27.9,,Push,Recurrentes,Variedad de aires para tu espacio,"Título: Variedad de aires para tu espacio  
+Texto: Descubrí el aire que se adapta a tu sala, oficina o dormitorio. Abrí la app. 🌬️",
+9275f86,4,3,True,False,1,5,11067,826,38.2,,Push,Recurrentes,Variedad de aires para tu espacio,"Título: Variedad de aires para tu espacio  
+Texto: Descubrí el aire que se adapta a tu sala, oficina o dormitorio. Abrí la app. 🌬️",
