@@ -17,14 +17,18 @@ agentes.py: etapa 1, pipeline secuencial de Marketing con LangGraph.
 - Guardar (código): si la pieza se aprobó, la agrega al CSV (siempre, salvo que el pedido diga
   explícitamente que no; ver GUARDAR_SIEMPRE).
 
-Todas las reglas salen del PDF de la guía: el código no tiene reglas de marca escritas a mano.
-Qué recibe cada agente lo decide el código (las funciones nodo_*), no un LLM. Lo que el código
-puede verificar no se deja librado al LLM:
+Las reglas de marca salen del PDF de la guía, que el revisor lee entero. Qué recibe cada agente
+lo decide el código (las funciones nodo_*), no un LLM. Lo que el código puede verificar no se
+deja librado al LLM:
 - el canal y el segmento se validan contra el historial;
 - las medidas (largo, palabras, emojis) se calculan con código;
 - los valores (%, $, fechas, cuotas) que no están en el pedido ni en la guía rechazan la pieza;
 - una pieza casi igual a una del historial (similitud coseno con embeddings) se rechaza;
 - solo se aprueba si el veredicto es exactamente APROBADA y ningún punto del checklist falla.
+Además hay cuatro listas escritas a mano, para reglas de la guía que el revisor tenía y no
+aplicaba (las corridas lo muestran): beneficios (BENEFICIOS), tuteo (TUTEO_*), vigencias sin
+fecha (VIGENCIAS) y términos internos del brief (TERMINOS_DEL_BRIEF). Son listas cortas, de
+formas sin ambigüedad, porque un falso positivo gasta un borrador sin que lo vea el revisor.
 
 main.py solo usa responder(). La etapa 2 reutiliza ejecutar_marketing().
 """
@@ -197,23 +201,38 @@ UMBRAL_COPIA = 0.85
 # Tuteo (la guía, sección 2: voseo, no "compra tú"). Solo formas que no se confunden con el
 # voseo ni con sustantivos: el presente de tú ("tienes" vs "tenés") en cualquier lugar, y el
 # imperativo de tú ("Descubre" vs "Descubrí") solo al empezar una oración, donde le habla al
-# cliente (en el medio, "elige" o "encuentra" pueden ser tercera persona). "Dale" y "date" no
-# van: en rioplatense son iguales con vos.
+# cliente (en el medio, "elige" o "encuentra" pueden ser tercera persona). También el pronombre
+# "ti" ("para ti", "hablan de ti"): con vos es "para vos". Quedan afuera las palabras que al
+# empezar una oración pueden no ser tuteo: "Dale"/"Date" (iguales con vos), "Sigue"/"Cambia"
+# (tercera persona: "Sigue el calor"), "Compra"/"Visita"/"Suma"/"Busca"/"Entra"/"Llena"
+# (sustantivos o adjetivos: "Compra simple", "Visita guiada", "Suma de ideas").
 TUTEO_PRESENTE = re.compile(
-    r"\b(?:tú|tienes|puedes|quieres|sabes|eres|haces|vienes|necesitas|buscas|encuentras|disfrutas|"
+    r"\b(?:tú|ti|tienes|puedes|quieres|sabes|eres|haces|vienes|necesitas|buscas|encuentras|disfrutas|"
     r"prefieres|conoces|sientes|piensas|vives|eliges|descubres|mereces|imaginas|recibes|aprovechas)\b",
     flags=re.IGNORECASE)
 TUTEO_IMPERATIVO = {"descubre", "elige", "aprovecha", "disfruta", "renueva", "mira", "ven", "haz",
-                    "pide", "conoce", "visita", "prepara", "transforma", "sigue", "encuentra", "compra",
-                    "entra", "ingresa", "escoge", "imagina", "cambia", "equipa", "decora", "llena",
-                    "suma", "busca", "atrévete", "anímate", "regálate"}
-# Vigencias que dan un plazo sin fecha ("esta semana", "por tiempo limitado"): si el pedido no las
-# trae, son un dato inventado igual que una fecha. La vigencia va como marcador: [DD/MM].
+                    "pide", "conoce", "prepara", "transforma", "encuentra", "ingresa", "escoge",
+                    "imagina", "equipa", "decora", "atrévete", "anímate", "regálate"}
+# Vigencias que dan un plazo sin fecha ("esta semana", "por tiempo limitado"): en una promoción,
+# si el pedido no las trae, son un dato inventado igual que una fecha y van como marcador
+# [DD/MM]. Solo se controlan si la pieza tiene un beneficio o un %: en un post de tips, "este
+# fin de semana" no es la vigencia de nada.
 VIGENCIAS = re.compile(
     r"\b(?:esta\s+semana|este\s+(?:mes|fin\s+de\s+semana|finde)|solo\s+por\s+hoy|s[oó]lo\s+hoy|"
     r"hasta\s+(?:el\s+)?(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)|"
     r"por\s+tiempo\s+limitado|[uú]ltimos\s+d[ií]as|por\s+pocos\s+d[ií]as|hasta\s+fin\s+de\s+mes)\b",
     flags=re.IGNORECASE)
+
+
+# Palabras del brief y de la guía que no van en una pieza para clientes: si aparecen, el redactor
+# copió instrucciones internas ("Voseo", "con voseo rioplatense"). No incluye "tono" ni
+# "segmento"... que pueden tener otro sentido ("tonos tierra") o ser válidas.
+TERMINOS_DEL_BRIEF = re.compile(r"\b(?:voseo|tuteo|rioplatense|brief|llamado a la acci[oó]n|cta)\b",
+                                flags=re.IGNORECASE)
+
+
+def terminos_del_brief(texto: str) -> list[str]:
+    return sorted({m.group(0).lower() for m in TERMINOS_DEL_BRIEF.finditer(texto)})
 
 
 def formas_de_tuteo(texto: str) -> list[str]:
@@ -226,6 +245,9 @@ def formas_de_tuteo(texto: str) -> list[str]:
 
 
 def vigencias_no_pedidas(texto: str, pedido: str) -> list[str]:
+    es_promocion = "%" in texto or any(b in texto.lower() for b in BENEFICIOS)
+    if not es_promocion:
+        return []
     pedidas = {re.sub(r"\s+", " ", v).lower() for v in VIGENCIAS.findall(pedido)}
     return sorted({re.sub(r"\s+", " ", v).lower() for v in VIGENCIAS.findall(MARCADOR.sub("", texto))} - pedidas)
 
@@ -262,6 +284,7 @@ def controles_de_codigo(texto: str, pedido: str, canal: str) -> tuple[str, list[
     beneficios = beneficios_no_pedidos(texto, pedido)
     tuteo = formas_de_tuteo(texto)
     vigencias = vigencias_no_pedidas(texto, pedido)
+    internos = terminos_del_brief(texto)
     parecida = pieza_mas_parecida(texto)
 
     medidas = [f"- Valores (%, $, fechas, cuotas) que no están en el pedido ni en la guía: "
@@ -271,6 +294,7 @@ def controles_de_codigo(texto: str, pedido: str, canal: str) -> tuple[str, list[
                f"- Formas de tuteo: {', '.join(tuteo) if tuteo else 'ninguna'}",
                f"- Vigencias sin fecha que el pedido no trae (\"esta semana\"...): "
                f"{', '.join(vigencias) if vigencias else 'ninguna'}",
+               f"- Términos internos del brief en la pieza: {', '.join(internos) if internos else 'ninguno'}",
                f"- Pieza más parecida del historial: '{parecida['titulo']}' ({parecida['fecha']}, "
                f"{parecida['segmento']}), similitud {parecida['similitud']:.2f} (copia desde {UMBRAL_COPIA})"]
     fallas = []
@@ -293,6 +317,9 @@ def controles_de_codigo(texto: str, pedido: str, canal: str) -> tuple[str, list[
     if vigencias:
         fallas.append(f"Vigencia inventada (control por código): {', '.join(vigencias)} no está en el "
                       f"pedido. Sacala o usá un marcador ([DD/MM]).")
+    if internos:
+        fallas.append(f"Brief filtrado (control por código): la pieza dice {', '.join(internos)}, que son "
+                      f"instrucciones internas. Escribí el texto para el cliente, sin nombrarlas.")
     if parecida["similitud"] >= UMBRAL_COPIA:
         fallas.append(f"Copia del historial (control por código): la pieza es casi igual a "
                       f"'{parecida['titulo']}' ({parecida['fecha']}), similitud {parecida['similitud']:.2f}. "
@@ -620,7 +647,9 @@ def nodo_revisor(estado: EstadoMarketing) -> dict:
     }
 
 
-MARCAS = re.compile(r"\b(NO\s+CUMPLE|NO\s+APLICA|CUMPLE)\b", flags=re.IGNORECASE)
+# "Cumple parcialmente" o "cumple a medias" no es CUMPLE: se toma como NO CUMPLE
+MARCAS = re.compile(r"\b(NO\s+CUMPLE|NO\s+APLICA|CUMPLE\s+(?:PARCIAL\w*|A\s+MEDIAS|EN\s+PARTE)|CUMPLE)\b",
+                    flags=re.IGNORECASE)
 # "1.", "1)", "- 1.", "**1.**", "| 1 |", "Punto 1:": el revisor no siempre numera igual
 NUMERO_DE_PUNTO = re.compile(r"(?:punto\s*)?(\d+)\s*[.):|\-–]\s*(.*)", flags=re.IGNORECASE)
 
@@ -638,6 +667,8 @@ def leer_checklist(revision: str) -> tuple[dict[int, str], list[str]]:
             continue
         marca = MARCAS.search(m.group(2))
         valor = re.sub(r"\s+", " ", marca.group(1)).upper() if marca else ""
+        if valor.startswith("CUMPLE "):
+            valor = "NO CUMPLE"
         marcas.setdefault(int(m.group(1)), valor)
         if not marca or valor == "NO CUMPLE":
             fallidos.append(linea.strip())
